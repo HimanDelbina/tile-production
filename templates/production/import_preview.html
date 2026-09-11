@@ -1,0 +1,209 @@
+{% extends 'base.html' %}{% load fa %}{% block content %}
+<div class="page-heading">
+  <div>
+    <div class="eyebrow">پیش‌نمایش بارگذاری شماره {{ batch.pk }}</div>
+    <h1>پیش‌نمایش و اعتبارسنجی ردیف‌های اکسل</h1>
+    <p>
+      کارخانه: <strong>{{ batch.factory.name }}</strong> | 
+      تاریخ تولید: <strong>{{ batch.date|fa }}</strong> | 
+      بارگذار: <strong>{{ batch.uploaded_by.get_full_name|default:batch.uploaded_by.username }}</strong> |
+      وضعیت نوبت: <strong>{{ batch.get_status_display }}</strong>
+      {% if batch.original_file %}
+      | <a href="{% url 'import_file_download' token=batch.token %}" style="color: #0284c7; text-decoration: underline;">دریافت فایل اکسل اصلی</a>
+      {% endif %}
+    </p>
+    {% if is_confirmed %}
+    <div style="background: #f0fdf4; border: 1px solid #86efac; color: #166534; padding: 10px 16px; border-radius: 6px; margin-top: 12px; font-size: 0.95rem;">
+      ✓ این نوبت در تاریخ <strong>{{ batch.confirmed_at|fa }}</strong> توسط <strong>{{ batch.confirmed_by.get_full_name|default:batch.confirmed_by.username }}</strong> ثبت نهایی شده است. ردیف‌های زیر صرفاً سابقه ورودی اکسل بوده و غیرقابل ویرایش هستند. در صورت نیاز به اصلاح تولید، از منوی گزارش‌ها و گزینه «ویرایش» رکورد مربوطه اقدام نمایید.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if not is_confirmed and missing_sizes or not is_confirmed and missing_techs %}
+<div class="card" style="margin-bottom: 24px; border: 1px solid #d0d7de; border-radius: 8px; padding: 20px; background: #f8fafc;">
+  <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+    <div>
+      <h3 style="margin-top: 0; color: #1e293b; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
+        <span style="color: #0284c7;">ℹ</span> اطلاعات پایه استخراج‌شده (فاقد رکورد در سیستم)
+      </h3>
+      <p style="margin: 4px 0 16px 0; color: #475569; font-size: 0.9rem;">
+        اقلام زیر از شرح کالا استخراج شده‌اند اما در حال حاضر در اطلاعات پایه سیستم تعریف نشده‌اند.
+      </p>
+    </div>
+  </div>
+
+  {% if is_admin %}
+  <form method="post" style="margin: 0;">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create_missing_base">
+    <div style="display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 16px;">
+      {% if missing_sizes %}
+      <div style="flex: 1; min-width: 250px;">
+        <strong style="display: block; margin-bottom: 8px; color: #334155; font-size: 0.9rem;">سایزهای جدید:</strong>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          {% for s in missing_sizes %}
+          <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.95rem;">
+            <input type="checkbox" name="sizes" value="{{ s }}" checked>
+            <span>سایز <strong>{{ s|fa }}</strong></span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if missing_techs %}
+      <div style="flex: 1; min-width: 250px;">
+        <strong style="display: block; margin-bottom: 8px; color: #334155; font-size: 0.9rem;">انواع فنی جدید:</strong>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          {% for t in missing_techs %}
+          <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.95rem;">
+            <input type="checkbox" name="tech_types" value="{{ t }}" checked>
+            <span>نوع فنی <strong>«{{ t }}»</strong></span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    <button class="button primary" type="submit" style="background: #0284c7; border-color: #0284c7;">
+      ایجاد موارد انتخاب‌شده در اطلاعات پایه و تطبیق مجدد
+    </button>
+  </form>
+  {% else %}
+  <div style="color: #64748b; font-size: 0.9rem;">
+    {% if missing_sizes %}سایزهای یافت‌نشده: {% for s in missing_sizes %}<strong>{{ s|fa }}</strong>{% if not forloop.last %}، {% endif %}{% endfor %}<br>{% endif %}
+    {% if missing_techs %}انواع فنی یافت‌نشده: {% for t in missing_techs %}<strong>«{{ t }}»</strong>{% if not forloop.last %}، {% endif %}{% endfor %}<br>{% endif %}
+    <span style="color: #b45309; display: inline-block; margin-top: 6px;">
+      * برای ایجاد این موارد با مدیر سامانه هماهنگ کنید یا سایز و نوع فنی معادل را در جدول زیر به صورت دستی انتخاب فرمایید.
+    </span>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+  <div style="display: flex; gap: 8px;">
+    {% if batch.status != 'confirmed' %}
+    <form method="post" style="display: inline-block; margin: 0;">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="reprocess">
+      <button class="button" type="submit" title="پردازش مجدد شرح کالا و به‌روزرسانی تطبیق‌ها با حفظ تغییرات دستی">
+        🔄 پردازش مجدد پیش‌نمایش
+      </button>
+    </form>
+    {% endif %}
+  </div>
+
+  <div style="display: flex; gap: 8px;">
+    {% if can_confirm %}
+    <form method="post" action="{% url 'import_confirm' token=batch.token %}" style="display: inline-block; margin: 0;">
+      {% csrf_token %}
+      <button class="button primary" type="submit" style="background: #16a34a; border-color: #16a34a; font-weight: bold;">
+        ✓ تأیید نهایی و ایجاد تولیدات
+      </button>
+    </form>
+    {% elif batch.status == 'confirmed' %}
+    <span class="badge" style="background: #16a34a; color: #fff; padding: 6px 14px; border-radius: 4px; font-weight: bold;">
+      ✓ این نوبت قبلاً ثبت نهایی شده است
+    </span>
+    {% else %}
+    <button class="button" type="button" disabled title="ابتدا خطاهای تمام ردیف‌ها را برطرف و ذخیره فرمایید" style="opacity: 0.6; cursor: not-allowed;">
+      تأیید نهایی (به دلیل خطا غیرفعال است)
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+<form method="post" id="preview-form">
+  {% csrf_token %}
+  <input type="hidden" name="action" value="save_rows">
+  
+  <div style="overflow-x: auto; margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
+    <table class="entry-table" style="width: 100%; min-width: 1050px; border-collapse: collapse; text-align: right;">
+      <thead>
+        <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
+          <th style="padding: 10px; width: 45px; text-align: center;">ردیف</th>
+          <th style="padding: 10px; min-width: 200px;">شرح اصلی کالا</th>
+          <th style="padding: 10px; min-width: 150px;">سایز</th>
+          <th style="padding: 10px; min-width: 120px;">درجه</th>
+          <th style="padding: 10px; min-width: 150px;">نوع فنی</th>
+          <th style="padding: 10px; width: 90px; text-align: center;">جمع تولید</th>
+          <th style="padding: 10px; width: 110px;">متراژ</th>
+          <th style="padding: 10px; width: 95px; text-align: center;">وضعیت</th>
+          <th style="padding: 10px; min-width: 180px;">علت مشکل / هشدار</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for item in row_items %}
+        <tr style="border-bottom: 1px solid #e2e8f0; background: {% if item.row.status == 'error' %}#fff5f5{% else %}#ffffff{% endif %};">
+          <td style="padding: 8px; text-align: center; color: #64748b; font-size: 0.9rem;">
+            {{ item.row.excel_row|fa }}
+            {{ item.form.row_id }}
+          </td>
+          <td style="padding: 8px; font-size: 0.85rem; line-height: 1.4; color: #1e293b;" title="{{ item.row.raw_description }}">
+            {{ item.row.raw_description }}
+          </td>
+          <td style="padding: 8px;">
+            <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 4px;">
+              استخراج: <strong>{{ item.extracted_size_display|fa }}</strong>
+              {% if item.row.is_reversed_size %}
+              <span style="color: #0284c7; font-size: 0.7rem;">(معکوس)</span>
+              {% endif %}
+            </div>
+            {{ item.form.size }}
+            {{ item.form.size.errors }}
+          </td>
+          <td style="padding: 8px;">
+            <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 4px;">
+              استخراج: <strong>{{ item.extracted_grade_display|fa }}</strong>
+            </div>
+            {{ item.form.grade }}
+            {{ item.form.grade.errors }}
+          </td>
+          <td style="padding: 8px;">
+            <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 4px;">
+              استخراج: <strong>{{ item.extracted_tech_display }}</strong>
+            </div>
+            {{ item.form.technical_type }}
+            {{ item.form.technical_type.errors }}
+          </td>
+          <td style="padding: 8px; text-align: center; font-size: 0.9rem; font-weight: 500;">
+            {{ item.row.production_quantity|default:"—"|fa }}
+          </td>
+          <td style="padding: 8px;">
+            {{ item.form.area }}
+            {{ item.form.area.errors }}
+          </td>
+          <td style="padding: 8px; text-align: center;">
+            {% if item.row.status == 'ok' %}
+            <span style="display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; background: #dcfce7; color: #15803d;">
+              تأیید شده
+            </span>
+            {% else %}
+            <span style="display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; background: #fee2e2; color: #b91c1c;">
+              نیازمند بررسی
+            </span>
+            {% endif %}
+          </td>
+          <td style="padding: 8px; font-size: 0.8rem; line-height: 1.4; color: {% if item.row.status == 'error' %}#b91c1c{% else %}#b45309{% endif %};">
+            {{ item.row.error_message|default:"—" }}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if batch.status != 'confirmed' %}
+  <div class="form-actions" style="display: flex; justify-content: space-between; align-items: center;">
+    <a class="button" href="{% url 'import_upload' %}">بارگذاری فایل جدید</a>
+    <button class="button primary" type="submit">ذخیره تغییرات ردیف‌ها</button>
+  </div>
+  {% else %}
+  <div class="form-actions">
+    <a class="button" href="/reports/">بازگشت به گزارش‌ها</a>
+  </div>
+  {% endif %}
+</form>
+{% endblock %}

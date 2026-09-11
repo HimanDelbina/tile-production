@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tileproduction}
+      POSTGRES_USER: ${POSTGRES_USER:-tileapp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - tile_network
+
+  web:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      DJANGO_ENV: production
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - media_data:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - tile_network
+
+volumes:
+  postgres_data:
+  media_data:
+
+networks:
+  tile_network:
+    driver: bridge

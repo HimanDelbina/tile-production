@@ -1,0 +1,13 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.sqlite3
+staticfiles/
+qa-output/
+backups/
+media/
+imports/
+.vscode/
+.idea/

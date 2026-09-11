@@ -1,0 +1,500 @@
+{% load fa %}
+<style>
+/* Responsive dashboard chart enhancements */
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+  margin-bottom: 25px;
+  width: 100%;
+  min-width: 0;
+}
+.charts-grid > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.trend-panel {
+  grid-column: 1 / -1;
+}
+.trend-chart {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px 4px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--teal) #f1f5f9;
+  box-sizing: border-box;
+  border-radius: 8px;
+}
+.trend-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: clamp(6px, 1.2vw, 14px);
+  min-height: 220px;
+  min-width: 100%;
+  width: max-content;
+  box-sizing: border-box;
+  background: repeating-linear-gradient(to top, transparent 0, transparent 46px, #eaf0f5 47px, transparent 48px);
+  padding: 10px 14px;
+}
+.trend-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: clamp(30px, 3.6vw, 56px);
+  flex: 1 0 auto;
+  position: relative;
+  border-radius: 6px;
+  padding: 4px 2px;
+  transition: background .15s, transform .15s;
+  text-decoration: none;
+}
+.trend-column:hover, .trend-column:focus {
+  background: #eef8f8;
+  transform: translateY(-2px);
+}
+.trend-number {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  font-weight: 500;
+}
+.trend-track {
+  display: flex;
+  align-items: flex-end;
+  height: 155px;
+  width: clamp(14px, 1.8vw, 24px);
+  margin: 6px 0;
+}
+.trend-fill {
+  display: block;
+  background: linear-gradient(to top, #109b99, #51c5b9);
+  border-radius: 4px 4px 0 0;
+  width: 100%;
+  min-height: 2px;
+  transition: height .3s;
+}
+.trend-date {
+  font-size: 11px;
+  color: #71859a;
+  margin-top: 6px;
+  white-space: nowrap;
+  writing-mode: vertical-rl;
+  height: 65px;
+  font-weight: 500;
+  text-align: center;
+}
+/* Grade row responsive 2-tier card */
+.grade-row {
+  display: block;
+  margin: 12px 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  transition: background .15s;
+  text-decoration: none;
+}
+.grade-row:hover {
+  background: #f7fafc;
+}
+.grade-row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px 12px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.grade-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 500;
+  color: var(--ink);
+}
+.grade-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.grade-label {
+  word-break: break-word;
+}
+.grade-stats {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-right: auto;
+  white-space: nowrap;
+}
+.grade-stats strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.grade-stats small {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.grade-bar {
+  display: block;
+  width: 100%;
+  height: 8px;
+  background: #eef3f7;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.grade-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  transition: width .3s;
+}
+/* Horizontal bar (factories, designs, sizes) */
+.horizontal-bar {
+  display: block;
+  margin: 12px 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  transition: background .15s;
+  text-decoration: none;
+}
+.horizontal-bar:hover {
+  background: #f7fafc;
+}
+.horizontal-bar .bar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px 12px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.horizontal-bar .bar-label {
+  font-weight: 500;
+  min-width: 0;
+  word-break: break-word;
+  color: var(--ink);
+}
+.horizontal-bar .bar-value {
+  font-size: 13px;
+  white-space: nowrap;
+  margin-right: auto;
+  color: var(--ink);
+}
+.horizontal-bar .bar-value small {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 11px;
+  margin-right: 4px;
+}
+.horizontal-bar .bar-track {
+  display: block;
+  width: 100%;
+  height: 8px;
+  border-radius: 6px;
+  background: #edf3f7;
+  margin-top: 8px;
+  overflow: hidden;
+}
+.horizontal-bar .bar-track i {
+  display: block;
+  height: 100%;
+  background: var(--teal);
+  border-radius: 6px;
+  transition: width .3s;
+}
+/* Stacked column chart */
+.stacked-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px 4px 14px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--teal) #f1f5f9;
+  box-sizing: border-box;
+}
+.stacked-columns {
+  display: flex;
+  justify-content: safe center;
+  align-items: flex-end;
+  gap: clamp(16px, 3.5vw, 44px);
+  min-height: 230px;
+  min-width: 100%;
+  width: max-content;
+  margin: 0 auto;
+  padding: 8px 12px;
+  box-sizing: border-box;
+}
+.stack-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-width: 54px;
+}
+.stack-col strong {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  text-align: center;
+}
+.stack-track {
+  height: 165px;
+  width: clamp(48px, 7vw, 70px);
+  display: flex;
+  flex-direction: column-reverse;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #edf3f7;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.06);
+}
+.stack-track a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 11px;
+  font-weight: 500;
+  overflow: hidden;
+  text-decoration: none;
+  transition: opacity .15s;
+}
+.stack-track a:hover {
+  opacity: .85;
+}
+.stack-col b {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--navy);
+  white-space: nowrap;
+  text-align: center;
+}
+.grade-legend {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 16px;
+  padding: 0 8px;
+}
+
+@media (max-width: 1024px) {
+  .charts-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .trend-panel {
+    grid-column: auto;
+  }
+}
+@media (max-width: 768px) {
+  .trend-track {
+    height: 140px;
+  }
+  .trend-bars {
+    min-height: 200px;
+  }
+  .stack-track {
+    height: 145px;
+  }
+  .stacked-columns {
+    gap: 20px;
+  }
+}
+@media (max-width: 640px) {
+  .stacked-columns {
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 480px) {
+  .charts-grid {
+    gap: 14px;
+  }
+  .trend-bars {
+    min-height: 180px;
+    padding: 6px 4px;
+    gap: 6px;
+  }
+  .trend-track {
+    height: 120px;
+    width: 15px;
+  }
+  .trend-column {
+    min-width: 28px;
+  }
+  .trend-date {
+    font-size: 10px;
+    height: 58px;
+  }
+  .stacked-columns {
+    justify-content: flex-start;
+    gap: 14px;
+    padding: 6px 4px;
+  }
+  .stack-track {
+    width: 44px;
+    height: 130px;
+  }
+  .horizontal-bar, .grade-row {
+    padding: 6px 4px;
+    margin: 10px 0;
+  }
+}
+</style>
+
+<section class="charts-grid">
+  <!-- روند تولید روزانه / ماهانه -->
+  <article class="panel trend-panel">
+    <div class="panel-heading">
+      <div>
+        <h2>روند تولید {% if summary.trend_mode == 'month' %}ماهانه{% else %}روزانه{% endif %}</h2>
+        <p>متراژ تولید • تقویم شمسی</p>
+      </div>
+      <span class="legend"><i></i>مجموع کارخانه‌های انتخاب‌شده</span>
+    </div>
+    {% if summary.trend %}
+      <div class="trend-chart">
+        <div class="trend-bars">
+          {% for item in summary.trend %}
+            <a href="{{ item.url }}" class="trend-column" title="{{ item.label|fa }}: {{ item.area|num }} مترمربع">
+              <span class="trend-number">{% if item.area > 0 %}{{ item.area|num }}{% endif %}</span>
+              <span class="trend-track"><span class="trend-fill" style="height:{{ item.height|stringformat:'.3f' }}%"></span></span>
+              <span class="trend-date">{{ item.label|fa }}</span>
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+      <p class="chart-hint">برای مشاهده ریز تولید روی ستون‌ها کلیک کنید. بازه‌های بیش از ۱۲۰ روز به‌صورت ماهانه نمایش داده می‌شوند.</p>
+    {% else %}
+      <div class="empty-chart">برای این بازه تولیدی ثبت نشده است.</div>
+    {% endif %}
+  </article>
+
+  <!-- توزیع درجات -->
+  <article class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>توزیع درجات</h2>
+        <p>سهم از نتایج فیلترشده</p>
+      </div>
+      <span class="small-tag">متراژ / درصد</span>
+    </div>
+    {% for item in summary.grades %}
+      <a href="{{ item.url }}" class="grade-row">
+        <div class="grade-row-header">
+          <div class="grade-title">
+            <span class="grade-dot" style="background:{{ item.color }}"></span>
+            <span class="grade-label">{{ item.label }}</span>
+          </div>
+          <div class="grade-stats">
+            <strong class="grade-share">{{ item.share|num }}٪</strong>
+            <small class="grade-area">{{ item.area|num }} مترمربع</small>
+          </div>
+        </div>
+        <div class="grade-bar"><span style="width:{{ item.share|stringformat:'.3f' }}%;background:{{ item.color }}"></span></div>
+      </a>
+    {% empty %}
+      <div class="empty-chart">داده کافی نیست</div>
+    {% endfor %}
+    <div class="panel-note">مبنای درصد: {{ summary.total|num }} مترمربع</div>
+  </article>
+
+  <!-- مقایسه کارخانه‌ها -->
+  <article class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>مقایسه کارخانه‌ها</h2>
+        <p>متراژ و سهم از مجموع انتخاب‌شده</p>
+      </div>
+    </div>
+    {% for item in summary.factories %}
+      {% include 'production/bar.html' %}
+    {% empty %}
+      <div class="empty-chart">داده کافی نیست</div>
+    {% endfor %}
+  </article>
+
+  <!-- ترکیب درجات کارخانه‌ها -->
+  <article class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>ترکیب درجات کارخانه‌ها</h2>
+        <p>درصد داخلی هر کارخانه • مجموع همه درجات</p>
+      </div>
+    </div>
+    <div class="stacked-wrap">
+      <div class="stacked-columns">
+        {% for stack in summary.stacks %}
+          <div class="stack-col">
+            <strong>{{ stack.area|num }}</strong>
+            <div class="stack-track">
+              {% for part in stack.parts %}
+                {% if part.area %}
+                  <a href="{{ part.url }}" style="height:{{ part.share|stringformat:'.3f' }}%;background:{{ part.color }}" title="{{ part.label }}: {{ part.area|num }} مترمربع، {{ part.share|num }}٪">
+                    <span>{{ part.share|num }}٪</span>
+                  </a>
+                {% endif %}
+              {% endfor %}
+            </div>
+            <b>{{ stack.label }}</b>
+          </div>
+        {% empty %}
+          <div class="empty-chart">داده کافی نیست</div>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="grade-legend">
+      {% for g in summary.grade_objects %}
+        <span><i style="background:{{ g.color }}"></i>{{ g.name }}</span>
+      {% endfor %}
+    </div>
+    <p class="chart-hint">فیلتر درجه در این نمودار اعمال نمی‌شود؛ سایر فیلترها حفظ می‌شوند.</p>
+  </article>
+
+  <!-- طرح‌های پرتولید -->
+  <article class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>طرح‌های پرتولید</h2>
+        <p>پنج طرح با بیشترین متراژ</p>
+      </div>
+    </div>
+    {% for item in summary.designs|slice:':5' %}
+      {% include 'production/bar.html' %}
+    {% empty %}
+      <div class="empty-chart">داده کافی نیست</div>
+    {% endfor %}
+  </article>
+
+  <!-- سایزهای پرتولید -->
+  <article class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>سایزهای پرتولید</h2>
+        <p>متراژ و سهم در بازه انتخاب‌شده</p>
+      </div>
+    </div>
+    {% for item in summary.sizes|slice:':5' %}
+      {% include 'production/bar.html' %}
+    {% empty %}
+      <div class="empty-chart">داده کافی نیست</div>
+    {% endfor %}
+  </article>
+</section>

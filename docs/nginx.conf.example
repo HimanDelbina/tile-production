@@ -1,0 +1,22 @@
+# HTTPS certificate paths and domain must be adapted to your server.
+server {
+    listen 80;
+    server_name production.example.ir;
+    return 301 https://$host$request_uri;
+}
+server {
+    listen 443 ssl;
+    server_name production.example.ir;
+    ssl_certificate /etc/letsencrypt/live/production.example.ir/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/production.example.ir/privkey.pem;
+    # Increase body size limit to support Excel uploads up to 10MB (set to 15m for overhead)
+    client_max_body_size 15m;
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+    }
+}
