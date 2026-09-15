@@ -1,0 +1,165 @@
+{% extends 'base.html' %}
+{% load fa %}
+{% block extra_head %}
+<style>
+  .brief { max-width: 1440px; margin: auto; }
+  .brief-head, .brief-period, .brief-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .brief-head { margin-bottom: 16px; }
+  .brief-head h1 { font-size: 25px; }
+  .brief-head-title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .brief-badge { background: #fff2d9; color: #896016; border: 1px solid #eddeb9; padding: 2px 9px; border-radius: 6px; font-size: 11px; }
+  .brief-period { background: #e8f5f2; border: 1px solid #c8e5dd; border-radius: 10px; padding: 10px 16px; margin-bottom: 14px; }
+  .brief-period span { font-size: 12px; color: #4c6d68; }
+  .brief-period strong { font-size: 17px; margin-inline-start: 8px; }
+  .brief-filters { margin-bottom: 16px; border: 1px solid var(--line); background: white; border-radius: 10px; }
+  .brief-filters summary { cursor: pointer; padding: 10px 16px; font-size: 13px; color: var(--teal-dark); min-height: 44px; }
+  .brief-filter-form { padding: 12px 16px 16px; border-top: 1px solid var(--line); }
+  .brief-filter-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; }
+  .brief-filter-grid .field { margin-bottom: 12px; }
+  .brief-shortcuts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .brief-shortcuts a { font-size: 12px; padding: 5px 12px; background: #f0f5f8; border-radius: 6px; }
+  .brief-panel { background: white; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-bottom: 20px; }
+  .brief-factory-panel { border: 1px solid #c9d8e4; border-inline-start: 4px solid var(--teal); }
+  .brief-factory-heading { background: var(--navy); color: white; }
+  .brief-factory-heading h3 { display: flex; align-items: center; gap: 9px; font-size: 19px; }
+  .brief-factory-heading svg { width: 23px; height: 23px; flex-shrink: 0; color: #65d7c9; }
+  .brief-factory-heading p { color: #c4d4e2; }
+  .brief-total-heading { background: #e4f3ef; color: #164f49; }
+  .brief-section-head { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .brief-section-head h2 { font-size: 15px; }
+  .brief-section-head p { font-size: 11px; }
+  .brief table { font-variant-numeric: tabular-nums; table-layout: fixed; min-width: 600px; }
+  .brief th, .brief td { padding: 6px 12px; text-align: center; line-height: 1.5; }
+  .brief th:first-child, .brief td:first-child { text-align: right; white-space: normal; overflow-wrap: anywhere; }
+  .brief th { color: #52677d; }
+  .brief td { font-size: 13px; }
+  .brief td a { display: block; border-radius: 4px; }
+  .brief td a:hover, .brief td a:focus-visible { background: #e2f3ee; color: var(--teal-dark); }
+  .brief-cell-area { display: block; font-weight: 600; }
+  .brief-cell-percent { display: block; margin-top: 2px; font-size: 12px; font-weight: 600; color: #dc2626; line-height: 1.4; }
+  .brief tfoot .brief-cell-percent { color: #b91c1c; }
+  .brief-cell-percent.is-empty { color: #8295a5; font-weight: 400; }
+  .brief td a:hover .brief-cell-percent, .brief td a:focus-visible .brief-cell-percent { color: #991b1b; }
+  .brief .brief-size td:first-child { color: #60758a; }
+  .brief tfoot th, .brief tfoot td { background: #e4f3ef; color: #164f49; font-weight: 700; border-top: 2px solid #acd4c9; font-size: 14px; }
+  .brief-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-inline-end: 5px; }
+  .brief-note { padding: 9px 16px; background: #fcfdfd; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); }
+  .brief-empty { padding: 22px 16px; text-align: center; }
+  .brief-day { margin-bottom: 26px; }
+  .brief-day-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 10px 14px; margin-bottom: 12px; border: 1px solid #a9d7cd; border-inline-start: 5px solid var(--teal); border-radius: 8px; background: #e4f3ef; color: #164f49; }
+  .brief-day-heading h2 { font-size: 18px; }
+  .brief-day-heading span { font-size: 13px; }
+  .brief-day .brief-panel { margin-bottom: 12px; }
+  @media(max-width: 768px) {
+    .brief { width: 100%; max-width: 100%; overflow-x: hidden; }
+    .brief-head { flex-direction: column; align-items: stretch; gap: 10px; margin-bottom: 12px; }
+    .brief-head h1 { font-size: 20px; }
+    .brief-head .actions { width: 100%; display: flex; gap: 8px; }
+    .brief-head .actions .button { flex: 1; text-align: center; justify-content: center; font-size: 13px; min-height: 40px; padding: 6px 10px; }
+    .brief-period { flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px 12px; margin-bottom: 12px; }
+    .brief-period strong { display: block; margin: 0; font-size: 15px; }
+    .brief-filter-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+    .brief-shortcuts { gap: 6px; }
+    .brief-shortcuts a, .brief-shortcuts button { font-size: 11px; padding: 4px 8px; }
+    .brief-factory-heading { padding: 10px 12px; }
+    .brief-factory-heading h3 { font-size: 16px; }
+    .brief-day-heading { padding: 8px 10px; margin-bottom: 10px; }
+    .brief-day-heading h2 { font-size: 15px; }
+    .brief-day-heading span { font-size: 12px; }
+    .brief-section-head { padding: 10px 12px; }
+    .brief-section-head h2 { font-size: 14px; }
+    .brief .table-scroll { overflow-x: hidden !important; width: 100%; max-width: 100%; }
+    .brief table { min-width: 0 !important; width: 100% !important; table-layout: fixed; }
+    .brief th, .brief td { padding: 5px 2px; font-size: 11px; line-height: 1.3; }
+    .brief th:first-child, .brief td:first-child { width: 22%; padding-right: 4px; font-size: 10.5px; }
+    .brief th:nth-child(2), .brief td:nth-child(2) { width: 20%; font-size: 11px; }
+    .brief th .brief-dot { display: none; }
+    .brief-cell-area { font-size: 11px; }
+    .brief-cell-percent { font-size: 9.5px; margin-top: 1px; }
+    .brief tfoot th, .brief tfoot td { font-size: 11px; padding: 5px 2px; }
+  }
+  @media(max-width: 440px) {
+    .brief-filter-grid { grid-template-columns: 1fr; }
+    .brief th, .brief td { padding: 4px 1px; font-size: 10px; }
+    .brief th:first-child, .brief td:first-child { width: 20%; font-size: 9.5px; padding-right: 3px; }
+    .brief th:nth-child(2), .brief td:nth-child(2) { width: 19%; font-size: 10px; }
+    .brief-cell-area { font-size: 10px; }
+    .brief-cell-percent { font-size: 8.5px; }
+    .brief tfoot th, .brief tfoot td { font-size: 10px; padding: 4px 1px; }
+  }
+  @media print { .brief-filters, .brief-head .actions, .brief-badge { display: none; } .brief-panel { break-inside: avoid; } .brief .table-scroll { overflow: visible; } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="brief">
+  <header class="brief-head">
+    <div class="brief-head-title"><h1>تولید در یک نگاه</h1></div>
+    <div class="actions"><a class="button" href="{% url 'management_preview' %}?{{ query }}">گزارش جامع مدیریتی ↗</a><a class="button" href="{% url 'reports' %}?{{ query }}">ریز تولیدات</a></div>
+  </header>
+  {% if valid %}
+  {% if demo %}<div class="brief-note" role="status"><strong>دادهٔ نمونه برای {% for date in demo_dates %}{{ date|jdate }}{% if not forloop.last %} و {% endif %}{% endfor %}</strong> · اعداد صرفاً برای بررسی ظاهر گزارش هستند و در آمار واقعی ثبت نشده‌اند. <a class="text-link" href="?preset=yesterday">نمایش دادهٔ واقعی</a></div>{% endif %}
+  <div class="brief-period">
+    <div><span>تاریخ تولیدِ گزارش</span><strong>{{ active_summary.date_range|fa }}</strong></div>
+    <span>{{ active_summary.factories }}{% if active_summary.sizes %} · سایز {{ active_summary.sizes|fa }}{% endif %}</span>
+  </div>
+  {% endif %}
+  <details class="brief-filters" {% if not valid %}open{% endif %}>
+    <summary>تغییر تاریخ، کارخانه و سایز</summary>
+    <form method="get" action="" class="brief-filter-form">
+      {% if demo %}<input type="hidden" name="demo" value="1">{% endif %}
+      {{ filter_form.non_field_errors }}
+      <div class="brief-filter-grid">{% for field in filter_form %}<div class="field">{{ field.label_tag }}{{ field }}{{ field.errors }}</div>{% endfor %}</div>
+      <div class="brief-shortcuts">
+        <button type="submit" class="button primary">نمایش گزارش</button>
+        <a href="?preset=today{% if demo %}&amp;demo=1{% endif %}">امروز</a><a href="?preset=yesterday{% if demo %}&amp;demo=1{% endif %}">دیروز</a><a href="?preset=month{% if demo %}&amp;demo=1{% endif %}">ماه جاری تا امروز</a><a href="?start=&amp;end={% if demo %}&amp;demo=1{% endif %}">تمام تاریخ‌ها</a>
+      </div>
+    </form>
+  </details>
+  {% if valid and report %}
+  {% for day in report.daily_reports %}
+  <section class="brief-day" aria-labelledby="day-heading-{{ day.date|date:'Ymd' }}">
+    <header class="brief-day-heading"><h2 id="day-heading-{{ day.date|date:'Ymd' }}">تولید روز {{ day.date|jdate }}</h2><span>جمع روز: <strong>{{ day.report.summary_cards.total_area|rounded_num }}</strong> مترمربع</span></header>
+  {% for factory in day.report.factory_tables %}
+  <section class="brief-panel brief-factory-panel" aria-labelledby="factory-heading-{{ day.date|date:'Ymd' }}-{{ factory.factory.pk }}">
+    <div class="brief-section-head brief-factory-heading">
+      <h3 id="factory-heading-{{ day.date|date:'Ymd' }}-{{ factory.factory.pk }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V10l6 3V8l7 4V3h4l1 18H3Z M7 17h1m4 0h1m4 0h1"/></svg>کارخانه {{ factory.name }}</h3>
+      <p>متراژ: مترمربع · درصد از همان ردیف</p>
+    </div>
+    {% if not factory.has_production %}<p class="brief-empty">در این بازه برای این کارخانه تولیدی ثبت نشده است.</p>{% endif %}
+    <div class="table-scroll" tabindex="0" role="region" aria-label="جدول تولید کارخانه {{ factory.name }}">
+      <table>
+        <thead><tr><th scope="col">سایز</th><th scope="col">کل متراژ</th>{% for grade in report.grades %}<th scope="col"><span class="brief-dot" style="background:{{ grade.color }}"></span>{{ grade.name|fa }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for row in factory.rows %}
+          <tr class="brief-size"><td>{% if not demo %}<a href="{{ row.url }}">{% endif %}{{ row.size_label|fa }}{% if not demo %}</a>{% endif %}</td><td>{{ row.total_area|rounded_num }}</td>{% for cell in row.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+        <tfoot><tr><th scope="row">جمع {{ factory.name }}</th><td>{{ factory.total_area|rounded_num }}</td>{% for cell in factory.footer.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}</tr></tfoot>
+      </table>
+    </div>
+  </section>
+  {% endfor %}
+  </section>
+  {% empty %}<p class="brief-empty">در این بازه و با این فیلترها تولیدی ثبت نشده است.</p>{% endfor %}
+  <section class="brief-panel" aria-labelledby="brief-total-title">
+    <div class="brief-section-head brief-total-heading"><h2 id="brief-total-title">جمع کل بازه · همهٔ روزها و کارخانه‌های انتخاب‌شده</h2></div>
+    <div class="table-scroll" tabindex="0" role="region" aria-label="جمع تولید کارخانه‌های انتخاب‌شده">
+      <table>
+        <thead><tr><th scope="col">کارخانه</th><th scope="col">کل متراژ</th>{% for grade in report.grades %}<th scope="col"><span class="brief-dot" style="background:{{ grade.color }}"></span>{{ grade.name|fa }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for factory in report.factory_tables %}
+          <tr>
+            <th scope="row">{% if not demo %}<a href="{{ factory.footer.url }}">{% endif %}{{ factory.name }}{% if not demo %}</a>{% endif %}</th>
+            <td><strong>{{ factory.total_area|rounded_num }}</strong></td>
+            {% for cell in factory.footer.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot><tr><th scope="row">جمع کل</th><td>{{ report.aggregated_table.footer.total_area|rounded_num }}</td>{% for cell in report.aggregated_table.footer.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}</tr></tfoot>
+      </table>
+    </div>
+  </section>
+  <div class="brief-note">متراژ و درصدها برای نمایش گرد شده‌اند؛ جمع‌ها از مقادیر دقیق محاسبه می‌شوند و جمع درصدهای نمایشی ممکن است با ۱۰۰٪ اختلاف داشته باشد. «—» یعنی دادهٔ کافی برای درصد وجود ندارد.</div>
+  {% endif %}
+</div>
+{% endblock %}

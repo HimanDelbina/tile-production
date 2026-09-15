@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from django import template
 from django.utils import timezone
 from production.dates import jalali
@@ -10,6 +10,16 @@ def num(value):
     if value is None: return '—'
     try: return fa(f'{Decimal(value):,.2f}')
     except Exception: return fa(value)
+@register.filter
+def rounded_num(value):
+    """Round report display only; retain precise values for calculations."""
+    if value is None: return '—'
+    try:
+        rounded = Decimal(str(value)).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+        return fa(f'{rounded:,.0f}')
+    except Exception:
+        return fa(value)
+
 @register.filter
 def cell(value): return num(value) if isinstance(value,(Decimal,float)) else fa('—' if value is None else value)
 @register.filter

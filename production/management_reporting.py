@@ -29,7 +29,7 @@ def calc_percentage(numerator, denominator):
         return Decimal('0.00')
     return (numerator / denominator) * 100
 
-def get_management_report_data(user, cleaned_data, query_params):
+def get_management_report_data(user, cleaned_data, query_params, *, sample_dates=None, include_days=False):
     permitted_factories = list(factories_for(user).order_by('name'))
     permitted_factory_ids = {f.pk for f in permitted_factories}
 
@@ -55,7 +55,10 @@ def get_management_report_data(user, cleaned_data, query_params):
         qs = qs.filter(size__in=cleaned_data['size'])
 
     # Single aggregation query
-    aggregated_data = list(qs.values('factory_id', 'size_id', 'grade_id').annotate(total_area=Sum('area')))
+    group_fields = ['factory_id', 'size_id', 'grade_id']
+    if include_days:
+        group_fields.append('date')
+    aggregated_data = list(qs.values(*group_fields).annotate(total_area=Sum('area'))) if sample_dates is None else []
 
     # All grades in the system, preserving order of rank then id
     db_grades = list(Grade.objects.all().order_by('rank', 'id'))
@@ -65,6 +68,49 @@ def get_management_report_data(user, cleaned_data, query_params):
     db_sizes = list(Size.objects.all().order_by('width', 'length'))
     size_map = {s.pk: s for s in db_sizes}
 
+    # Preview-only rows in memory: never create or update production records.
+    if sample_dates is not None:
+        sample_dates = sorted(set(sample_dates))
+        sample_sizes = db_sizes[:2]
+        if cleaned_data.get('size'):
+            selected_size_ids = {s.pk for s in cleaned_data['size']}
+            sample_sizes = [s for s in sample_sizes if s.pk in selected_size_ids]
+        for sample_date in sample_dates:
+            if cleaned_data.get('start') and sample_date < cleaned_data['start']:
+                continue
+            if cleaned_data.get('end') and sample_date > cleaned_data['end']:
+                continue
+            day_factor = Decimal('1') if sample_date == sample_dates[-1] else Decimal('0.85')
+            for factory in selected_factories:
+                for size in sample_sizes:
+                    base = Decimal(4200 + factory.pk % 5 * 600 + size.pk % 3 * 350) * day_factor
+                    for index, grade in enumerate(db_grades):
+                        weight = Decimal('0.76') if is_first_grade(grade) else Decimal('0.18') / Decimal(index + 1)
+                        aggregated_data.append({
+                            'date': sample_date,
+                            'factory_id': factory.pk, 'size_id': size.pk,
+                            'grade_id': grade.pk,
+                            'total_area': (base * weight).quantize(Decimal('0.01')),
+                        })
+
+    report = _build_management_report(permitted_factories, selected_factories, db_grades, db_sizes, cleaned_data, query_params, aggregated_data)
+    if include_days:
+        rows_by_date = defaultdict(list)
+        for row in aggregated_data:
+            rows_by_date[row['date']].append(row)
+        report['daily_reports'] = []
+        for day, rows in sorted(rows_by_date.items()):
+            day_data = {**cleaned_data, 'start': day, 'end': day}
+            day_params = query_params.copy()
+            day_params['start'] = jalali(day)
+            day_params['end'] = jalali(day)
+            day_report = _build_management_report(permitted_factories, selected_factories, db_grades, db_sizes, day_data, day_params, rows)
+            report['daily_reports'].append({'date': day, 'report': day_report})
+    return report
+
+
+def _build_management_report(permitted_factories, selected_factories, db_grades, db_sizes, cleaned_data, query_params, aggregated_data):
+    size_map = {s.pk: s for s in db_sizes}
     matrix = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: ZERO)))
     factory_size_totals = defaultdict(lambda: defaultdict(lambda: ZERO))
     factory_grade_totals = defaultdict(lambda: defaultdict(lambda: ZERO))

@@ -1,6 +1,7 @@
 import uuid
 from decimal import Decimal as D
 from datetime import date, timedelta
+from unittest.mock import patch
 from django.test import TestCase, Client
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -59,6 +60,96 @@ class ManagementReportTests(TestCase):
 
     def setUp(self):
         self.client.force_login(self.admin)
+
+    def test_preview_matches_original_report_and_preserves_filters(self):
+        params = {'start': jalali(self.test_date), 'end': jalali(self.test_date), 'factory': self.factory_a.pk}
+        original = self.client.get('/', params)
+        preview = self.client.get('/management-preview/', params)
+        self.assertTemplateUsed(original, 'production/management_preview.html')
+        self.assertTemplateUsed(preview, 'production/management_report.html')
+        self.assertEqual(preview.context['report']['summary_cards'], original.context['report']['summary_cards'])
+        self.assertEqual(preview.context['active_summary'], original.context['active_summary'])
+        self.assertContains(original, 'تولید در یک نگاه')
+        self.assertContains(original, '۱٬۰۰۰')
+        self.assertNotContains(original, '۱٬۰۰۰٫۰۰')
+        self.assertNotContains(original, 'کارخانه ب</a>')
+
+    def test_preview_requires_login_and_limits_factory_access(self):
+        self.client.logout()
+        response = self.client.get('/')
+        self.assertRedirects(response, '/login/?next=/', fetch_redirect_response=False)
+        self.client.force_login(self.viewer_a)
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['report']['summary_cards']['total_area'], D('1000.00'))
+        self.assertNotContains(response, 'کارخانه ب')
+        response = self.client.get('/', {'factory': self.factory_b.pk})
+        self.assertEqual(response.status_code, 400)
+
+    def test_preview_empty_and_invalid_dates(self):
+        response = self.client.get('/', {'start': '1400/01/01', 'end': '1400/01/01'})
+        self.assertContains(response, 'تولیدی ثبت نشده است')
+        self.assertContains(response, '۱۴۰۰/۰۱/۰۱')
+        self.assertIsNone(response.context['report']['summary_cards']['first_grade_percentage'])
+        response = self.client.get('/', {'start': '1405/06/20', 'end': '1405/06/10'})
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, 'پایان بازه نباید قبل از شروع تاریخ باشد', status_code=400)
+
+    def test_preview_samples_do_not_change_real_records(self):
+        before = list(Production.objects.order_by('pk').values())
+        original = self.client.get('/management-preview/')
+        response = self.client.get('/', {'preset': 'yesterday', 'demo': '1'})
+        self.assertContains(response, 'دادهٔ نمونه')
+        self.assertGreater(response.context['report']['summary_cards']['total_area'], 0)
+        self.assertEqual(list(Production.objects.order_by('pk').values()), before)
+        real_report = self.client.get('/management-preview/', {'demo': '1'})
+        self.assertEqual(real_report.context['report']['summary_cards']['total_area'], original.context['report']['summary_cards']['total_area'])
+        self.assertNotContains(real_report, 'دادهٔ نمونه')
+
+    def test_preview_samples_respect_dates_and_permissions(self):
+        self.client.force_login(self.viewer_a)
+        response = self.client.get('/', {'preset': 'yesterday', 'demo': '1'})
+        self.assertNotContains(response, 'کارخانه ب')
+        response = self.client.get('/', {'preset': 'today', 'demo': '1'})
+        self.assertEqual(response.context['report']['summary_cards']['total_area'], D('0'))
+        self.assertContains(response, 'تولیدی ثبت نشده است')
+
+    @patch('production.dates.timezone.localdate', return_value=date(2026, 9, 15))
+    def test_preview_sample_days_sum_in_date_range(self, _today):
+        before = list(Production.objects.order_by('pk').values())
+        day_22 = self.client.get('/', {'demo': '1', 'start': '1405/06/22', 'end': '1405/06/22'})
+        day_23 = self.client.get('/', {'demo': '1', 'start': '1405/06/23', 'end': '1405/06/23'})
+        combined = self.client.get('/', {'demo': '1', 'start': '1405/06/22', 'end': '1405/06/23'})
+        total_22 = day_22.context['report']['summary_cards']['total_area']
+        total_23 = day_23.context['report']['summary_cards']['total_area']
+        self.assertGreater(total_22, 0)
+        self.assertNotEqual(total_22, total_23)
+        self.assertEqual(combined.context['report']['summary_cards']['total_area'], total_22 + total_23)
+        days = combined.context['report']['daily_reports']
+        self.assertEqual([day['date'] for day in days], [parse_jalali('1405/06/22'), parse_jalali('1405/06/23')])
+        self.assertEqual([day['report']['summary_cards']['total_area'] for day in days], [total_22, total_23])
+        self.assertContains(combined, 'تولید روز ۱۴۰۵/۰۶/۲۲')
+        self.assertContains(combined, 'تولید روز ۱۴۰۵/۰۶/۲۳')
+        self.assertEqual(list(Production.objects.order_by('pk').values()), before)
+
+    def test_daily_real_report_and_links_respect_day_and_access(self):
+        from urllib.parse import urlparse, parse_qs
+        earlier = self.test_date - timedelta(days=1)
+        Production.objects.create(factory=self.factory_a, size=self.size_60_120, grade=self.grade_1,
+                                  area=D('50.25'), date=earlier, created_by=self.admin)
+        Production.objects.create(factory=self.factory_b, size=self.size_60_120, grade=self.grade_1,
+                                  area=D('70.00'), date=earlier, created_by=self.admin)
+        self.client.force_login(self.viewer_a)
+        response = self.client.get('/', {'start': jalali(earlier), 'end': jalali(self.test_date)})
+        report = response.context['report']
+        self.assertEqual(report['summary_cards']['total_area'], D('1050.25'))
+        self.assertEqual([day['report']['summary_cards']['total_area'] for day in report['daily_reports']], [D('50.25'), D('1000.00')])
+        for day in report['daily_reports']:
+            self.assertEqual([table['factory'].pk for table in day['report']['factory_tables']], [self.factory_a.pk])
+            link = day['report']['factory_tables'][0]['rows'][0]['url']
+            query = parse_qs(urlparse(link).query)
+            self.assertEqual(query['start'], [jalali(day['date'])])
+            self.assertEqual(query['end'], [jalali(day['date'])])
 
     def test_acceptance_scenario_section_10(self):
         """
@@ -223,7 +314,7 @@ class ManagementReportTests(TestCase):
         self.assertIsNone(card_c['first_grade_percentage'])
 
         # Check rendered HTML for factory C
-        resp = self.client.get(f'/?start={jalali(self.test_date)}&end={jalali(self.test_date)}', HTTP_HOST='127.0.0.1')
+        resp = self.client.get(f'/management-preview/?start={jalali(self.test_date)}&end={jalali(self.test_date)}', HTTP_HOST='127.0.0.1')
         self.assertContains(resp, 'بدون تولید در این بازه')
 
     def test_invalid_date_range(self):
@@ -290,7 +381,7 @@ class ManagementReportTests(TestCase):
         The section 'ترکیب درجات به تفکیک کارخانه و سایز' must be placed at the highest position
         in the report content, before summary cards, factory cards, and charts.
         """
-        resp = self.client.get(f'/?start={jalali(self.test_date)}&end={jalali(self.test_date)}', HTTP_HOST='127.0.0.1')
+        resp = self.client.get(f'/management-preview/?start={jalali(self.test_date)}&end={jalali(self.test_date)}', HTTP_HOST='127.0.0.1')
         self.assertEqual(resp.status_code, 200)
         content = resp.content.decode('utf-8')
 
@@ -317,7 +408,7 @@ class ManagementReportTests(TestCase):
         and invalid submissions should automatically render the modal open.
         """
         # 1. Valid request
-        resp = self.client.get(f'/?start={jalali(self.test_date)}&end={jalali(self.test_date)}', HTTP_HOST='127.0.0.1')
+        resp = self.client.get(f'/management-preview/?start={jalali(self.test_date)}&end={jalali(self.test_date)}', HTTP_HOST='127.0.0.1')
         self.assertEqual(resp.status_code, 200)
         content = resp.content.decode('utf-8')
 
@@ -346,15 +437,15 @@ class ManagementReportTests(TestCase):
         self.assertIn('name="size"', content)
         self.assertIn('value="today"', content)
 
-        # 2. Default date is yesterday when accessing / without parameters
-        resp_default = self.client.get('/', HTTP_HOST='127.0.0.1')
+        # 2. Default date is yesterday when accessing /management-preview/ without parameters
+        resp_default = self.client.get('/management-preview/', HTTP_HOST='127.0.0.1')
         self.assertEqual(resp_default.status_code, 200)
         yesterday_str = jalali(period('yesterday')[0])
         self.assertEqual(resp_default.context['params']['start'], yesterday_str)
         self.assertEqual(resp_default.context['params']['end'], yesterday_str)
 
         # 3. Invalid date range request: modal should not have 'hidden' attribute
-        resp_invalid = self.client.get('/?start=1405/06/20&end=1405/06/10', HTTP_HOST='127.0.0.1')
+        resp_invalid = self.client.get('/management-preview/?start=1405/06/20&end=1405/06/10', HTTP_HOST='127.0.0.1')
         self.assertEqual(resp_invalid.status_code, 400)
         content_invalid = resp_invalid.content.decode('utf-8')
 
@@ -370,13 +461,9 @@ class ManagementReportTests(TestCase):
         Both desktop table view and mobile card view should be rendered in the DOM,
         so mobile users see responsive cards without horizontal scrolling.
         """
-        resp = self.client.get(f'/?start={jalali(self.test_date)}&end={jalali(self.test_date)}', HTTP_HOST='127.0.0.1')
+        resp = self.client.get(f'/management-preview/?start={jalali(self.test_date)}&end={jalali(self.test_date)}', HTTP_HOST='127.0.0.1')
         self.assertEqual(resp.status_code, 200)
         content = resp.content.decode('utf-8')
 
         for item in ['desktop-table-view', 'mgmt-mobile-cards', 'mgmt-m-card', 'mgmt-m-grades-grid', 'mgmt-m-footer-card']:
             self.assertIn(item, content)
-
-
-
-

@@ -3,6 +3,22 @@
 
 {% block extra_head %}
 <style>
+.mgmt-report-period {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  margin-bottom: 22px;
+  border: 1px solid #bce2dc;
+  border-inline-start: 4px solid var(--teal);
+  border-radius: 12px;
+  background: #edf8f6;
+  color: var(--navy);
+}
+.mgmt-report-period svg { width: 24px; height: 24px; flex-shrink: 0; color: var(--teal-dark); }
+.mgmt-report-period div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; min-width: 0; }
+.mgmt-report-period span { font-size: 13px; }
+.mgmt-report-period strong { font-size: 17px; }
 .mgmt-kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -735,6 +751,7 @@
       <span>فیلتر گزارش</span>
       <span style="font-size: 15px;">⚙</span>
     </button>
+    <a class="button" href="{% url 'management_report' %}?{{ query }}">تولید در یک نگاه <span>↗</span></a>
     <a class="button" href="/overview/?{{ query }}">نمای کلی تولید <span>↗</span></a>
     <a class="button" href="/reports/?{{ query }}">گزارش‌های تفصیلی <span>▤</span></a>
   </div>
@@ -755,6 +772,13 @@
 {% endif %}
 
 {% if valid and report %}
+  <div class="mgmt-report-period" aria-label="تاریخ گزارش نمایش‌داده‌شده">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18M8 15h2m4 0h2m-8 3h2"/></svg>
+    <div>
+      <span>تاریخ تولیدِ گزارش نمایش‌داده‌شده:</span>
+      <strong>{{ active_summary.date_range|fa }}</strong>
+    </div>
+  </div>
   {% if quick_factory_buttons %}
     <div class="factory-quick-bar">
       <div class="factory-quick-buttons">

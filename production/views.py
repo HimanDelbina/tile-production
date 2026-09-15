@@ -55,7 +55,7 @@ def report_context(request,dashboard=False):
     return {'filter_form':form,'summary':summary,'table':table,'page':page,'params':params,'query':params.urlencode(),'active_filters':active,'valid':valid,'title':'نمای کلی تولید' if dashboard else 'گزارش‌های تولید','is_dashboard':dashboard}
 
 @login_required
-def management_report(request):
+def management_report(request, template_name='production/management_preview.html'):
     params = request.GET.copy()
     preset = params.pop('preset', None)
     if preset:
@@ -78,7 +78,9 @@ def management_report(request):
     form = ManagementFilterForm(params, user=request.user)
     valid = form.is_valid()
     data = form.cleaned_data if valid else {}
-    report = get_management_report_data(request.user, data, params) if valid else None
+    demo = template_name == 'production/management_preview.html' and params.get('demo') == '1'
+    demo_dates = sorted({period('yesterday')[0], jdatetime.date(1405, 6, 22).togregorian()}) if demo else None
+    report = get_management_report_data(request.user, data, params, sample_dates=demo_dates, include_days=template_name == 'production/management_preview.html') if valid else None
 
     active_summary = {}
     if valid:
@@ -138,7 +140,11 @@ def management_report(request):
         'url_all_factories': url_all_factories,
         'is_all_factories_active': is_all_factories_active,
     }
-    return render(request, 'production/management_report.html', ctx, status=200 if valid else 400)
+    if template_name == 'production/management_preview.html':
+        ctx['title'] = 'تولید در یک نگاه'
+        ctx['demo'] = demo
+        ctx['demo_dates'] = demo_dates
+    return render(request, template_name, ctx, status=200 if valid else 400)
 
 @login_required
 def dashboard(request):
