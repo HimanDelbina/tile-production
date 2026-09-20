@@ -3,6 +3,7 @@ from decimal import Decimal as D
 from datetime import date, timedelta
 from unittest.mock import patch
 from django.test import TestCase, Client
+from django.http import QueryDict
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
@@ -12,6 +13,7 @@ from production.models import (
 )
 from production.dates import parse_jalali, jalali, period
 from production.management_reporting import get_management_report_data, is_first_grade
+from production.reporting import summarize, report_table
 
 
 class ManagementReportTests(TestCase):
@@ -345,6 +347,28 @@ class ManagementReportTests(TestCase):
         row = fa_table['rows'][0]
         special_cell = next(c for c in row['grades'] if c['grade'].pk == grade_special.pk)
         self.assertEqual(special_cell['area'], D('50.00'))
+
+    def test_management_grade_columns_follow_configured_rank(self):
+        grade_6 = Grade.objects.create(name='درجه ۶', rank=4, color='#445566')
+        self.grade_ungraded.rank = 3
+        self.grade_ungraded.save(update_fields=['rank'])
+        report = get_management_report_data(self.admin, {'start': self.test_date, 'end': self.test_date}, {})
+        names = [grade.name for grade in report['grades']]
+        self.assertLess(names.index('آنگرید'), names.index('درجه ۶'))
+
+    def test_grade_report_and_summary_follow_configured_rank(self):
+        grade_6 = Grade.objects.create(name='درجه ۶', rank=4, color='#445566')
+        self.grade_ungraded.rank = 3
+        self.grade_ungraded.save(update_fields=['rank'])
+        Production.objects.create(factory=self.factory_a, size=self.size_60_120, grade=grade_6,
+                                  area=D('25.00'), date=self.test_date, created_by=self.admin)
+        data = {'start': self.test_date, 'end': self.test_date, 'group': 'grade'}
+        summary = summarize(self.admin, data, QueryDict('', mutable=True))
+        labels = [item['label'] for item in summary['grades']]
+        self.assertLess(labels.index('آنگرید'), labels.index('درجه ۶'))
+        table = report_table(summary, data)
+        row_labels = [row['cells'][0] for row in table['body']]
+        self.assertLess(row_labels.index('آنگرید'), row_labels.index('درجه ۶'))
 
     def test_unauthenticated_redirect(self):
         """

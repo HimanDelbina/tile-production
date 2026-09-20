@@ -57,6 +57,7 @@ def summarize(user,data,params):
     sizes=items(grouped(rows,lambda r:r.size),'size')
     top_size=sizes[0] if sizes else None
     grades=items(grouped(rows,lambda r:r.grade),'grade')
+    grades.sort(key=lambda item: (grade_map[item['id']].rank, item['id']))
     type_groups=grouped([r for r in rows if r.technical_type],lambda r:r.technical_type)
     designs=items(type_groups,'technical_type') if type_groups else []
     mix=grouped(allgrades,lambda r:(r.factory,r.grade))
@@ -123,12 +124,19 @@ def report_table(summary,data):
         return {'day':(jalali(r.date),),'month':(jalali(r.date)[:7],),'year':(jalali(r.date)[:4],),'factory':(r.factory,),'size':(r.size,),'grade':(r.grade,),'type':(r.size,r.grade)}[group]
     groups=defaultdict(lambda:ZERO)
     for r in records: groups[key(r)]+=r.area
+    if group == 'grade':
+        grouped_items = sorted(groups.items(), key=lambda item: (item[0][0].rank, item[0][0].pk))
+    elif group == 'type':
+        grouped_items = sorted(groups.items(), key=lambda item: (str(item[0][0]), item[0][1].rank, item[0][1].pk))
+    else:
+        grouped_items = sorted(groups.items(),key=lambda kv:tuple(str(v) for v in kv[0]))
     result=[]
-    for k,area in sorted(groups.items(),key=lambda kv:tuple(str(v) for v in kv[0])):
+    for k,area in grouped_items:
         cells=list(map(str,k))+[area,percentage(area,total)]
         result.append({'cells':cells,'area':area})
     headers=HEADERS[group]+['متراژ (مترمربع)','سهم از نتایج فیلترشده ٪']
-    return {'headers':headers,'body':sort_rows(result,data),'percent_cols':list(range(len(HEADERS[group])+1,len(headers))),'area_cols':[len(HEADERS[group])],'group':group}
+    preserve_grade_order = group in ('grade', 'type') and not (data.get('order') or '').startswith('area')
+    return {'headers':headers,'body':result if preserve_grade_order else sort_rows(result,data),'percent_cols':list(range(len(HEADERS[group])+1,len(headers))),'area_cols':[len(HEADERS[group])],'group':group}
 
 def sort_rows(rows,data):
     order=data.get('order') or 'new'
