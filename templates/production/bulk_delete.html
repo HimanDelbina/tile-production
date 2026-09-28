@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% load fa %}
+{% block content %}
+<section class="panel confirmation">
+  <div class="confirm-icon danger">!</div>
+  {% if delete_all_filtered %}
+    <h1>تأیید حذف رکوردهای فیلترشده</h1>
+    <p>آیا از حذف تمام رکوردهای منطبق بر فیلترهای زیر اطمینان دارید؟</p>
+  {% else %}
+    <h1>تأیید حذف رکوردهای انتخاب‌شده</h1>
+    <p>آیا از حذف رکوردهای انتخابی اطمینان دارید؟</p>
+  {% endif %}
+
+  <div class="bulk-summary-box">
+    <div>تعداد رکوردها: <strong>{{ count|fa }} رکورد</strong></div>
+    <div>مجموع متراژ: <strong>{{ total_area|num }} مترمربع</strong></div>
+    {% if active_filters %}
+      <hr style="border:0; border-top:1px solid var(--line); margin:12px 0;">
+      <div><strong>فیلترهای اعمال‌شده:</strong></div>
+      <ul>
+        {% for f in active_filters %}
+          <li>{{ f.label }}: {{ f.value|fa }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+
+  <p class="warning-text" style="color:var(--muted); font-size:13px; margin: 16px 0;">
+    این رکوردها از گزارش‌ها و آمار تولید حذف می‌شوند؛ اما سابقه و تاریخچهٔ آن‌ها در سیستم باقی خواهد ماند.
+  </p>
+
+  <form method="post" action="{% url 'bulk_delete' %}">
+    {% csrf_token %}
+    <input type="hidden" name="confirm" value="1">
+    <input type="hidden" name="query" value="{{ query }}">
+    {% if delete_all_filtered %}
+      <input type="hidden" name="delete_all_filtered" value="1">
+    {% else %}
+      {% for pk in record_pks %}
+        <input type="hidden" name="selected_ids" value="{{ pk }}">
+      {% endfor %}
+    {% endif %}
+    <div style="display:flex; justify-content:center; gap:12px; margin-top:20px; flex-wrap:wrap;">
+      <button type="submit" class="button danger">
+        {% if delete_all_filtered %}
+          تأیید و حذف تمام {{ count|fa }} رکورد فیلترشده
+        {% else %}
+          تأیید و حذف {{ count|fa }} رکورد انتخاب‌شده
+        {% endif %}
+      </button>
+      <a class="button" href="/reports/{% if query %}?{{ query }}{% endif %}">انصراف و بازگشت</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

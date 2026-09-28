@@ -15,7 +15,7 @@ from django.urls import reverse
 from .models import Factory, Size, Grade, Profile, Production, Audit, Submission
 from .forms import ProductionForm, FilterForm
 from .dates import parse_jalali, period, jalali
-from .services import create_batch, change_record, duplicate_rows
+from .services import create_batch, change_record, duplicate_rows, bulk_delete_records
 from .reporting import summarize, report_table, filtered
 
 
@@ -211,6 +211,51 @@ class ProductionTests(TestCase):
         self.assertTrue(Production.objects.filter(pk=obj.pk).exists())
         self.assertEqual(Audit.objects.filter(production=obj, action='delete').count(), 1)
         self.assertEqual(self.client.get(reverse('history', args=[obj.pk])).status_code, 200)
+
+    def test_bulk_delete_records_service(self):
+        records = list(Production.objects.filter(factory=self.f1, deleted_at__isnull=True)[:2])
+        pks = [r.pk for r in records]
+        deleted_count = bulk_delete_records(self.admin, pks)
+        self.assertEqual(deleted_count, 2)
+        for pk in pks:
+            obj = Production.objects.get(pk=pk)
+            self.assertIsNotNone(obj.deleted_at)
+            self.assertEqual(Audit.objects.filter(production=obj, action='delete').count(), 1)
+
+    def test_bulk_delete_view_selected(self):
+        self.client.force_login(self.admin)
+        records = list(Production.objects.filter(deleted_at__isnull=True)[:2])
+        pks = [str(r.pk) for r in records]
+        # Confirmation page preview
+        res = self.client.post(reverse('bulk_delete'), {'action': 'delete_selected', 'selected_ids': pks, 'query': ''})
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'تأیید حذف رکوردهای انتخاب‌شده')
+        # Confirm deletion
+        res = self.client.post(reverse('bulk_delete'), {'confirm': '1', 'selected_ids': pks, 'query': ''})
+        self.assertEqual(res.status_code, 302)
+        for pk in pks:
+            self.assertTrue(Production.objects.filter(pk=pk, deleted_at__isnull=False).exists())
+
+    def test_bulk_delete_view_filtered(self):
+        self.client.force_login(self.admin)
+        query = f'factory={self.f1.pk}'
+        # Preview filtered deletion
+        res = self.client.post(reverse('bulk_delete'), {'action': 'delete_filtered', 'query': query})
+        self.assertEqual(res.status_code, 200)
+        self.assertContains(res, 'تأیید حذف رکوردهای فیلترشده')
+        # Confirm filtered deletion
+        res = self.client.post(reverse('bulk_delete'), {'confirm': '1', 'delete_all_filtered': '1', 'query': query})
+        self.assertEqual(res.status_code, 302)
+        # All records for f1 should now be soft-deleted
+        self.assertFalse(Production.objects.filter(factory=self.f1, deleted_at__isnull=True).exists())
+
+    def test_bulk_delete_requires_permission(self):
+        viewer = get_user_model().objects.create_user('viewer_test', 'v@test.test', 'Pass1234!')
+        Profile.objects.create(user=viewer, role='viewer')
+        self.client.force_login(viewer)
+        res = self.client.post(reverse('bulk_delete'), {'selected_ids': ['1']})
+        self.assertEqual(res.status_code, 403)
+
 
     def test_optimistic_edit_conflict(self):
         obj = Production.objects.filter(factory=self.f1).first()

@@ -48,3 +48,32 @@ def change_record(user,pk,data=None,version=None,delete=False):
     obj.version+=1; obj.save()
     Audit.objects.create(production=obj,actor=user,action='delete' if delete else 'update',before=before,after=obj.snapshot())
     return obj
+
+@transaction.atomic
+def bulk_delete_records(user, records_or_ids):
+    if not can_write(user):
+        raise PermissionDenied
+    if isinstance(records_or_ids, (list, set, tuple)):
+        if records_or_ids and isinstance(records_or_ids[0], Production):
+            records = [r for r in records_or_ids if r.deleted_at is None and factories_for(user).filter(pk=r.factory_id).exists()]
+        else:
+            records = list(records_for(user).filter(pk__in=records_or_ids))
+    else:
+        records = list(records_for(user).filter(pk__in=records_or_ids.values_list('pk', flat=True)))
+
+    if not records:
+        return 0
+
+    now = timezone.now()
+    audit_entries = []
+    for obj in records:
+        before = obj.snapshot()
+        obj.deleted_at = now
+        obj.version += 1
+        obj.save(update_fields=['deleted_at', 'version'])
+        audit_entries.append(
+            Audit(production=obj, actor=user, action='delete', before=before, after=obj.snapshot())
+        )
+    Audit.objects.bulk_create(audit_entries)
+    return len(records)
+

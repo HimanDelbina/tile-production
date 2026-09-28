@@ -23,6 +23,38 @@ const batch=$('[data-batch-form]',root);if(batch){
  batch.addEventListener('submit',e=>{if(!batch.checkValidity())return;if(batch.dataset.sending){e.preventDefault();return;}batch.dataset.sending='1';if(e.submitter?.name){const hidden=document.createElement('input');hidden.type='hidden';hidden.name=e.submitter.name;hidden.value=e.submitter.value;batch.append(hidden);}$$('button[type="submit"],button[name="next"]',batch).forEach(b=>b.disabled=true);});total();
 }
 const filters=$('[data-report-filter]',root);if(filters)filters.addEventListener('submit',async e=>{e.preventDefault();const data=new FormData(filters);if(e.submitter?.name)data.set(e.submitter.name,e.submitter.value);const q=new URLSearchParams(data);await navigate(location.pathname+'?'+q.toString());});
+const selectAllHeader=$('#header-select-all',root);const selectAllToolbar=$('#select-all-checkbox',root);const rowCheckboxes=$$('.row-checkbox',root);const deleteSelectedBtn=$('#btn-delete-selected',root);const deleteSelectedText=$('#btn-delete-selected-text',root);const selectedCountBadge=$('#bulk-selected-count',root);
+if(rowCheckboxes.length>0){
+ const updateSelectionState=()=>{const checked=rowCheckboxes.filter(cb=>cb.checked);const count=checked.length;const allChecked=count===rowCheckboxes.length&&count>0;const someChecked=count>0&&!allChecked;
+  if(selectAllHeader){selectAllHeader.checked=allChecked;selectAllHeader.indeterminate=someChecked;}
+  if(selectAllToolbar){selectAllToolbar.checked=allChecked;selectAllToolbar.indeterminate=someChecked;}
+  if(deleteSelectedBtn){
+    if(count>0){
+      deleteSelectedBtn.style.display='inline-flex';
+      deleteSelectedBtn.disabled=false;
+      const text='حذف '+fa(count)+' رکورد انتخاب‌شده';
+      if(deleteSelectedText) deleteSelectedText.textContent=text;
+      else deleteSelectedBtn.textContent=text;
+    }else{
+      deleteSelectedBtn.style.display='none';
+      deleteSelectedBtn.disabled=true;
+    }
+  }
+  if(selectedCountBadge){
+    if(count>0){
+      selectedCountBadge.style.display='inline-flex';
+      selectedCountBadge.textContent=fa(count)+' رکورد انتخاب شد';
+    }else{
+      selectedCountBadge.style.display='none';
+    }
+  }
+ };
+ const setAll=(checked)=>{rowCheckboxes.forEach(cb=>{cb.checked=checked;});updateSelectionState();};
+ if(selectAllHeader)selectAllHeader.onchange=()=>setAll(selectAllHeader.checked);
+ if(selectAllToolbar)selectAllToolbar.onchange=()=>setAll(selectAllToolbar.checked);
+ rowCheckboxes.forEach(cb=>{cb.onchange=updateSelectionState;});
+ updateSelectionState();
+}
 }
 async function navigate(url,push=true){document.body.classList.add('busy');try{const response=await fetch(url,{headers:{'X-Requested-With':'fetch'}});if(response.redirected){location.href=response.url;return;}const parsed=new DOMParser().parseFromString(await response.text(),'text/html');const main=$('#main',parsed);if(!main)throw Error();$('#main').replaceWith(main);document.title=parsed.title;if(push)history.pushState({},'',$('[data-report-filter]',main)?.dataset.canonical||url);init(main);$('#live-status').textContent='گزارش به‌روزرسانی شد';}catch(e){location.href=url;}finally{document.body.classList.remove('busy');}}
 window.addEventListener('popstate',()=>navigate(location.href,false));

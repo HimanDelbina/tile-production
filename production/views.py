@@ -17,8 +17,8 @@ from .models import Factory,Size,Grade,Profile,Production,Audit,Submission
 from .forms import BatchHeader,RowSet,ProductionForm,FilterForm,UserForm,ManagementFilterForm
 from .dates import period,jalali,normalize
 from .permissions import admin_required,can_write,factories_for,records_for,role,can_manage_batch
-from .services import create_batch,change_record,duplicate_rows
-from .reporting import summarize,report_table
+from .services import create_batch,change_record,duplicate_rows,bulk_delete_records
+from .reporting import summarize,report_table,filtered
 from .management_reporting import get_management_report_data
 from openpyxl import load_workbook
 from .importing.parser import parse_description
@@ -205,6 +205,82 @@ def delete(request,pk):
             messages.success(request,'رکورد حذف شد؛ تاریخچه آن محفوظ است.');return redirect('/reports/')
         except (ValidationError,ValueError) as e: messages.error(request,str(e))
     return render(request,'production/delete.html',{'title':'تأیید حذف تولید','obj':obj})
+
+@login_required
+def bulk_delete(request):
+    if not can_write(request.user):
+        raise PermissionDenied
+
+    params = request.POST if request.method == 'POST' else request.GET
+    query = params.get('query', '')
+    action = params.get('action', '')
+    delete_all_filtered = params.get('delete_all_filtered') == '1' or action == 'delete_filtered'
+
+    if query:
+        from django.http import QueryDict
+        filter_qd = QueryDict(query)
+    else:
+        filter_qd = params
+
+    filter_form = FilterForm(filter_qd, user=request.user)
+    filter_data = filter_form.cleaned_data if filter_form.is_valid() else {}
+
+    active_filters = []
+    if filter_form.is_valid():
+        for key, value in filter_data.items():
+            if value in (None, '', []) or key in ('group', 'order', 'page_size', 'trend'):
+                continue
+            if hasattr(value, 'exists'):
+                if not value.exists():
+                    continue
+                display = '، '.join(map(str, value))
+            elif key in ('start', 'end'):
+                display = jalali(value)
+            else:
+                display = str(value)
+            active_filters.append({'label': filter_form.fields[key].label, 'value': display})
+
+    if delete_all_filtered:
+        if not active_filters:
+            messages.warning(request, 'برای حذف رکوردهای فیلترشده، ابتدا باید حداقل یک فیلتر (مانند بازه تاریخ یا کارخانه) اعمال کنید.')
+            return redirect(f"/reports/?{query}" if query else "/reports/")
+        records_qs = filtered(request.user, filter_data)
+        count = records_qs.count()
+        total_area = sum((r.area for r in records_qs), Decimal('0'))
+        record_pks = list(records_qs.values_list('pk', flat=True))
+    else:
+        selected_ids = params.getlist('selected_ids')
+        if not selected_ids:
+            messages.warning(request, 'هیچ رکوردی برای حذف انتخاب نشده است.')
+            return redirect(f"/reports/?{query}" if query else "/reports/")
+        records_qs = records_for(request.user).filter(pk__in=selected_ids)
+        count = records_qs.count()
+        total_area = sum((r.area for r in records_qs), Decimal('0'))
+        record_pks = list(records_qs.values_list('pk', flat=True))
+
+    if count == 0:
+        messages.warning(request, 'هیچ رکورد فعالی برای حذف یافت نشد.')
+        return redirect(f"/reports/?{query}" if query else "/reports/")
+
+    if request.method == 'POST' and request.POST.get('confirm') == '1':
+        if delete_all_filtered:
+            records_to_del = filtered(request.user, filter_data)
+            deleted_count = bulk_delete_records(request.user, records_to_del)
+            messages.success(request, f'تمام {deleted_count} رکورد فیلترشده با موفقیت حذف شدند؛ سابقه حذف در تاریخچه محفوظ است.')
+        else:
+            deleted_count = bulk_delete_records(request.user, record_pks)
+            messages.success(request, f'{deleted_count} رکورد با موفقیت حذف شدند؛ سابقه حذف در تاریخچه محفوظ است.')
+        return redirect(f"/reports/?{query}" if query else "/reports/")
+
+    return render(request, 'production/bulk_delete.html', {
+        'title': 'تأیید حذف گروهی تولید',
+        'count': count,
+        'total_area': total_area,
+        'delete_all_filtered': delete_all_filtered,
+        'record_pks': record_pks,
+        'active_filters': active_filters,
+        'query': query,
+    })
 
 @login_required
 def history(request,pk):
