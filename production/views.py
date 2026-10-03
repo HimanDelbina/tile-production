@@ -8,7 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied,ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, ProtectedError
 from django.http import HttpResponse,JsonResponse,HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404,redirect,render
 from django.utils import timezone
@@ -322,11 +322,51 @@ def users(request,pk=None):
             with transaction.atomic():
                 obj=obj or get_user_model()()
                 for k in ('username','first_name','last_name','is_active'): setattr(obj,k,d[k])
+                if not obj.is_superuser:
+                    obj.is_staff = (d['role'] == 'admin')
                 if d['password']: obj.set_password(d['password'])
                 obj.save();profile,_=Profile.objects.get_or_create(user=obj)
                 profile.role=d['role'];profile.save();profile.factories.set(d['factories'])
             messages.success(request,'حساب کاربری ذخیره شد.');return redirect('users')
     return render(request,'production/users.html',{'title':'مدیریت کاربران','form':form,'items':get_user_model().objects.select_related('profile').all(),'editing':obj})
+
+@login_required
+def user_delete(request, pk):
+    admin_required(request.user)
+    target = get_object_or_404(get_user_model(), pk=pk)
+    if target.is_superuser or target.pk == request.user.pk:
+        messages.error(request, 'حذف مدیر اولیه سامانه و حساب کاربری خودتان مجاز نیست.')
+        return redirect('users')
+
+    has_records = (
+        Production.objects.filter(created_by=target).exists() or
+        ProductionImportBatch.objects.filter(uploaded_by=target).exists()
+    )
+
+    if request.method == 'POST':
+        action = request.POST.get('action', 'delete')
+        if action == 'deactivate' or has_records:
+            target.is_active = False
+            target.save()
+            messages.warning(request, f'حساب کاربری «{target.username}» به دلیل حفظ سوابق ثبت، غیرفعال گردید.')
+            return redirect('users')
+        else:
+            try:
+                target_name = target.get_full_name() or target.username
+                target.delete()
+                messages.success(request, f'حساب کاربری «{target_name}» با موفقیت حذف شد.')
+                return redirect('users')
+            except ProtectedError:
+                target.is_active = False
+                target.save()
+                messages.warning(request, f'به دلیل وجود سوابق وابسته، کاربر «{target.username}» حذف نشد اما حساب او غیرفعال گردید.')
+                return redirect('users')
+
+    return render(request, 'production/user_delete.html', {
+        'title': 'حذف حساب کاربری',
+        'target_user': target,
+        'has_records': has_records,
+    })
 
 @login_required
 def calendar_month(request):

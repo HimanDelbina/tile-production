@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel confirmation">
+  <div class="confirm-icon">!</div>
+  <h1>حذف حساب کاربری</h1>
+  <p>آیا از حذف حساب <strong>{{ target_user.get_full_name|default:target_user.username }}</strong> با نام کاربری <code>{{ target_user.username }}</code> اطمینان دارید؟</p>
+
+  {% if has_records %}
+    <div class="alert warning" style="text-align: right; line-height: 1.8; margin: 20px 0;">
+      ⚠️ <strong>توجه:</strong> این کاربر دارای سوابق ثبت تولید یا بارگذاری فایل است. برای حفظ یکپارچگی داده‌ها و تاریخچه، امکان حذف فیزیکی کامل این حساب وجود ندارد. با تأیید عملیات زیر، حساب کاربر <strong>غیرفعال</strong> می‌شود تا دیگر امکان ورود به سامانه را نداشته باشد.
+    </div>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="deactivate">
+      <div class="form-actions" style="justify-content: center; gap: 12px;">
+        <button class="button danger">غیرفعال‌سازی حساب کاربری</button>
+        <a class="button" href="{% url 'users' %}">انصراف</a>
+      </div>
+    </form>
+  {% else %}
+    <p style="color: var(--muted); font-size: 13px;">این کاربر هیچ سابقه‌ای در سیستم ثبت نکرده و اطلاعات حساب او به طور کامل حذف خواهد شد.</p>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="delete">
+      <div class="form-actions" style="justify-content: center; gap: 12px;">
+        <button class="button danger">تأیید و حذف نهایی کاربر</button>
+        <a class="button" href="{% url 'users' %}">انصراف</a>
+      </div>
+    </form>
+  {% endif %}
+</section>
+{% endblock %}

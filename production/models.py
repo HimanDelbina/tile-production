@@ -148,3 +148,16 @@ class ProductionImportRow(models.Model):
     def __str__(self):
         return f"Row {self.excel_row} (Batch {self.batch.pk})"
 
+
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+@receiver(post_save, sender=settings.AUTH_USER_MODEL)
+def ensure_user_profile(sender, instance, created, **kwargs):
+    if created:
+        Profile.objects.get_or_create(
+            user=instance,
+            defaults={'role': 'admin' if instance.is_superuser else 'viewer'}
+        )
+
+

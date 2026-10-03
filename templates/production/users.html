@@ -1,1 +1,70 @@
-{% extends 'base.html' %}{% block content %}<div class="page-heading"><div><h1>کاربران و دسترسی‌ها</h1><p>مدیر سامانه به همه کارخانه‌ها دسترسی دارد. برای سایر نقش‌ها کارخانه‌های مجاز را انتخاب کنید.</p></div></div><div class="management-grid"><section class="panel"><div class="panel-heading"><h2>حساب‌های کاربری</h2></div>{% for item in items %}<a class="master-item" href="{% url 'user_edit' item.pk %}"><strong>{{ item.get_full_name|default:item.username }}</strong><span>{{ item.profile.get_role_display|default:'مدیر اولیه' }}</span><span class="chip">{% if item.is_active %}فعال{% else %}غیرفعال{% endif %}</span></a>{% endfor %}</section><form method="post" class="panel standalone-form">{% csrf_token %}<h2>{% if editing %}ویرایش حساب{% else %}حساب جدید{% endif %}</h2>{{ form.non_field_errors }}{% for field in form %}<div class="field">{{ field.label_tag }}{{ field }}<small>{{ field.help_text }}</small>{{ field.errors }}</div>{% endfor %}<div class="form-actions"><button class="button primary">ذخیره کاربر</button>{% if editing %}<a class="button" href="/users/">کاربر جدید</a>{% endif %}</div></form></div>{% endblock %}
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <h1>کاربران و دسترسی‌ها</h1>
+    <p>مدیر سامانه به همه کارخانه‌ها دسترسی دارد. برای سایر نقش‌ها کارخانه‌های مجاز را انتخاب کنید.</p>
+  </div>
+  <div class="actions">
+    <a class="button primary" href="{% url 'users' %}">➕ ایجاد کاربر جدید</a>
+  </div>
+</div>
+
+<div class="management-grid">
+  <section class="panel">
+    <div class="panel-heading">
+      <h2>حساب‌های کاربری</h2>
+      <a class="button small" href="{% url 'users' %}">+ کاربر جدید</a>
+    </div>
+    {% for item in items %}
+      <div class="master-item {% if editing and editing.pk == item.pk %}selected{% endif %}" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 8px; border-top: 1px solid var(--line);">
+        <a href="{% url 'user_edit' item.pk %}" style="display: flex; align-items: center; gap: 10px; flex: 1; text-decoration: none; color: inherit; min-width: 0;">
+          <strong>{{ item.get_full_name|default:item.username }}</strong>
+          <small style="color: var(--muted); font-size: 12px;">({{ item.username }})</small>
+          <span style="font-size: 12px; color: var(--teal-dark);">{{ item.profile.get_role_display|default:'مدیر اولیه' }}</span>
+          <span class="chip {% if item.is_active %}mint{% endif %}">{% if item.is_active %}فعال{% else %}غیرفعال{% endif %}</span>
+        </a>
+        <div style="display: flex; gap: 6px; align-items: center; flex-shrink: 0;">
+          <a class="button small" href="{% url 'user_edit' item.pk %}" title="ویرایش">ویرایش</a>
+          {% if not item.is_superuser and item.pk != request.user.pk %}
+            <a class="button small danger-outline" href="{% url 'user_delete' item.pk %}" title="حذف کاربر">حذف</a>
+          {% endif %}
+        </div>
+      </div>
+    {% empty %}
+      <div class="empty-chart">هیچ کاربری یافت نشد.</div>
+    {% endfor %}
+  </section>
+
+  <form method="post" class="panel standalone-form">
+    {% csrf_token %}
+    <div class="panel-heading" style="margin-bottom: 16px;">
+      <h2>{% if editing %}ویرایش حساب «{{ editing.username }}»{% else %}ایجاد کاربر جدید{% endif %}</h2>
+      {% if editing %}
+        <a class="button small" href="{% url 'users' %}">انصراف / فرم کاربر جدید</a>
+      {% endif %}
+    </div>
+
+    {{ form.non_field_errors }}
+
+    {% for field in form %}
+      <div class="field">
+        {{ field.label_tag }}
+        {{ field }}
+        {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+        {{ field.errors }}
+      </div>
+    {% endfor %}
+
+    <div class="form-actions" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+      <button class="button primary">{% if editing %}ذخیره تغییرات{% else %}ثبت و ایجاد کاربر جدید{% endif %}</button>
+      {% if editing %}
+        <a class="button" href="{% url 'users' %}">انصراف</a>
+        {% if not editing.is_superuser and editing.pk != request.user.pk %}
+          <a class="button danger-outline" href="{% url 'user_delete' editing.pk %}" style="margin-inline-start: auto;">🗑️ حذف این کاربر</a>
+        {% endif %}
+      {% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}

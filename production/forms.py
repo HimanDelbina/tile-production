@@ -89,7 +89,7 @@ class UserForm(forms.Form):
     username=forms.CharField(label='نام کاربری',max_length=150,validators=get_user_model()._meta.get_field('username').validators)
     first_name=forms.CharField(label='نام',required=False,max_length=150)
     last_name=forms.CharField(label='نام خانوادگی',required=False,max_length=150)
-    password=forms.CharField(label='رمز عبور جدید',required=False,widget=forms.PasswordInput,help_text='برای حفظ رمز فعلی خالی بگذارید.')
+    password=forms.CharField(label='رمز عبور جدید',required=False,widget=forms.PasswordInput,help_text='حداقل ۸ نویسه شامل حروف و اعداد (برای حفظ رمز فعلی در زمان ویرایش خالی بگذارید).')
     role=forms.ChoiceField(label='نقش',choices=Profile.ROLES)
     factories=forms.ModelMultipleChoiceField(label='کارخانه‌های مجاز',queryset=Factory.objects.all(),required=False)
     is_active=forms.BooleanField(label='حساب فعال',required=False,initial=True)
