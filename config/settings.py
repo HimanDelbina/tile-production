@@ -169,7 +169,9 @@ LOGOUT_REDIRECT_URL = '/login/'
 # Security & Cookies
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_SECURE = os.getenv('DJANGO_COOKIE_SECURE', '1' if DJANGO_ENV == 'production' else '0') == '1'
+# Allow cookies over both HTTP and HTTPS unless DJANGO_COOKIE_SECURE is explicitly set to 1.
+# This prevents 'CSRF cookie not set' when accessed via HTTP or when reverse proxy doesn't force HTTPS.
+SESSION_COOKIE_SECURE = os.getenv('DJANGO_COOKIE_SECURE', '0') == '1'
 CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
 
 # Build trusted CSRF origins from DJANGO_CSRF_TRUSTED_ORIGINS and ALLOWED_HOSTS
