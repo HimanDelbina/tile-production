@@ -1,1 +1,18 @@
-{% extends 'base.html' %}{% block content %}<section class="panel confirmation"><h1>دسترسی مجاز نیست</h1><p>برای این بخش یا کارخانه مجوز ندارید.</p><a class="button" href="/">بازگشت به داشبورد</a></section>{% endblock %}
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel confirmation">
+  <div class="confirm-icon">!</div>
+  <h1>دسترسی مجاز نیست</h1>
+  {% if is_csrf %}
+    <p>اعتبارسنجی امنیتی نشست (CSRF) ناموفق بود.</p>
+    <p style="font-size: 13px; color: var(--muted); line-height: 1.8; margin: 15px 0;">
+      ارتباط امن بین مرورگر و سرور برقرار نشد. لطفاً صفحه را رفرش کرده یا مجدداً وارد شوید.
+      {% if reason %}<br><small style="color: var(--danger);">جزئیات: {{ reason }}</small>{% endif %}
+    </p>
+    <a class="button primary" href="/login/">بازگشت به صفحه ورود</a>
+  {% else %}
+    <p>برای این بخش یا کارخانه مجوز ندارید.</p>
+    <a class="button" href="/">بازگشت به داشبورد</a>
+  {% endif %}
+</section>
+{% endblock %}

@@ -917,4 +917,4 @@ def import_file_download(request, token):
 # -------------------------------------------------------------------
 
 def csrf_failure(request,reason=""):
-    return render(request,"403.html",status=403)
+    return render(request,"403.html",{"reason":reason,"is_csrf":True},status=403)

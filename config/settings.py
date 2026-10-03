@@ -171,10 +171,20 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SECURE = os.getenv('DJANGO_COOKIE_SECURE', '1' if DJANGO_ENV == 'production' else '0') == '1'
 CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
-CSRF_TRUSTED_ORIGINS = [o.strip() for o in os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()]
+
+# Build trusted CSRF origins from DJANGO_CSRF_TRUSTED_ORIGINS and ALLOWED_HOSTS
+raw_csrf = os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', '')
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in raw_csrf.split(',') if o.strip()]
+for host in ALLOWED_HOSTS:
+    if host not in ('*', '127.0.0.1', 'localhost', 'testserver'):
+        for proto in ('https', 'http'):
+            origin = f"{proto}://{host}"
+            if origin not in CSRF_TRUSTED_ORIGINS:
+                CSRF_TRUSTED_ORIGINS.append(origin)
 
 # Reverse Proxy & SSL Redirect
-if os.getenv('DJANGO_TRUST_PROXY', '0') == '1':
+# In production, default DJANGO_TRUST_PROXY to 1 so Nginx / reverse proxy X-Forwarded-Proto is respected
+if os.getenv('DJANGO_TRUST_PROXY', '1' if DJANGO_ENV == 'production' else '0') == '1':
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 SECURE_SSL_REDIRECT = os.getenv('DJANGO_SSL_REDIRECT', '0') == '1'
