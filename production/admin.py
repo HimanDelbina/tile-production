@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import Factory, Size, Grade, Profile, Production, Audit, Submission
+from .models import Factory, Size, Grade, Glaze, Profile, Production, Audit, Submission
 
 User = get_user_model()
 
@@ -25,6 +25,7 @@ admin.site.register(User, CustomUserAdmin)
 admin.site.register(Factory)
 admin.site.register(Size)
 admin.site.register(Grade)
+admin.site.register(Glaze)
 admin.site.register(Profile)
 admin.site.register(Production)
 admin.site.register(Audit)

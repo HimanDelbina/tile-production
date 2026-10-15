@@ -18,7 +18,7 @@ def factories_for(user):
     return user.profile.factories.all()
 
 def records_for(user):
-    return Production.objects.filter(deleted_at__isnull=True,factory__in=factories_for(user)).select_related('factory','size','grade','created_by','technical_type')
+    return Production.objects.filter(deleted_at__isnull=True,factory__in=factories_for(user)).select_related('factory','size','glaze','grade','created_by','technical_type')
 
 def can_manage_batch(user, batch):
     if not can_write(user):

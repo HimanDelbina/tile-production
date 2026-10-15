@@ -12,7 +12,7 @@ def percentage(n,d): return n/d*100 if d else None
 
 def filtered(user,data,ignore_grade=False):
     q=records_for(user)
-    for field in ('factory','size','grade'):
+    for field in ('factory','size','glaze','grade'):
         if field=='grade' and ignore_grade: continue
         if data.get(field): q=q.filter(**{field+'__in':data[field]})
     if data.get('start'): q=q.filter(date__gte=data['start'])
@@ -40,7 +40,7 @@ def summarize(user,data,params):
     total=sum((r.area for r in rows),ZERO)
     base=sum((r.area for r in allgrades),ZERO)
     first=sum((r.area for r in allgrades if r.grade.rank==1),ZERO)
-    grade_map={g.pk:g for g in Grade.objects.all()}
+    grade_map={g.pk:g for g in Grade.objects.filter(active=True)}
     def grouped(records,key):
         result=defaultdict(lambda:ZERO)
         for r in records: result[key(r)]+=r.area
@@ -58,6 +58,8 @@ def summarize(user,data,params):
     top_size=sizes[0] if sizes else None
     grades=items(grouped(rows,lambda r:r.grade),'grade')
     grades.sort(key=lambda item: (grade_map[item['id']].rank, item['id']))
+    glaze_groups=grouped([r for r in rows if r.glaze],lambda r:r.glaze)
+    glazes=items(glaze_groups,'glaze') if glaze_groups else []
     type_groups=grouped([r for r in rows if r.technical_type],lambda r:r.technical_type)
     designs=items(type_groups,'technical_type') if type_groups else []
     mix=grouped(allgrades,lambda r:(r.factory,r.grade))
@@ -87,9 +89,9 @@ def summarize(user,data,params):
             # Keep drilldown intersected with the original bounds.
             start_label=max(start_label,jalali(start));end_label=min(end_label,jalali(end))
             trend.append({'label':label,'area':area,'height':float(area/maxvalue*100),'url':drill(params,start=start_label,end=end_label)})
-    return {'rows':rows,'allgrades':allgrades,'total':total,'base_total':base,'first_share':percentage(first,base),'factories':factories,'sizes':sizes,'top_size':top_size,'grades':grades,'designs':designs,'stacks':stacks,'trend':trend,'trend_mode':trendkey,'grade_objects':list(grade_map.values())}
+    return {'rows':rows,'allgrades':allgrades,'total':total,'base_total':base,'first_share':percentage(first,base),'factories':factories,'sizes':sizes,'glazes':glazes,'top_size':top_size,'grades':grades,'designs':designs,'stacks':stacks,'trend':trend,'trend_mode':trendkey,'grade_objects':list(grade_map.values())}
 
-HEADERS={'detail':['تاریخ تولید','کارخانه','سایز','درجه','متراژ (مترمربع)','ثبت‌کننده','توضیحات'], 'day':['روز شمسی'],'month':['ماه شمسی'],'year':['سال شمسی'],'factory':['کارخانه'],'size':['سایز'],'grade':['درجه'],'type':['سایز','درجه']}
+HEADERS={'detail':['تاریخ تولید','کارخانه','سایز','درجه','متراژ (مترمربع)','لعاب','ثبت‌کننده','توضیحات'], 'day':['روز شمسی'],'month':['ماه شمسی'],'year':['سال شمسی'],'factory':['کارخانه'],'size':['سایز'],'glaze':['لعاب'],'grade':['درجه'],'type':['سایز','درجه'],'size_glaze':['سایز','لعاب']}
 
 def report_table(summary,data):
     group=data.get('group') or 'detail'; records=summary['rows'];total=summary['total']
@@ -119,15 +121,17 @@ def report_table(summary,data):
     if group=='detail':
         order=data.get('order') or 'new'
         rows=sorted(records,key=lambda r: (r.area,r.id) if order.startswith('area') else (r.date,r.id),reverse=order in ('new','area_desc'))
-        return {'headers':HEADERS[group],'body':[{'cells':[jalali(r.date),str(r.factory),str(r.size),str(r.grade),r.area,r.created_by.get_full_name() or r.created_by.username,r.notes],'obj':r,'area':r.area} for r in rows],'percent_cols':[],'area_cols':[4],'group':group}
+        return {'headers':HEADERS[group],'body':[{'cells':[jalali(r.date),str(r.factory),str(r.size),str(r.grade),r.area,str(r.glaze) if r.glaze else '—',r.created_by.get_full_name() or r.created_by.username,r.notes],'obj':r,'area':r.area} for r in rows],'percent_cols':[],'area_cols':[4],'group':group}
     def key(r):
-        return {'day':(jalali(r.date),),'month':(jalali(r.date)[:7],),'year':(jalali(r.date)[:4],),'factory':(r.factory,),'size':(r.size,),'grade':(r.grade,),'type':(r.size,r.grade)}[group]
+        return {'day':(jalali(r.date),),'month':(jalali(r.date)[:7],),'year':(jalali(r.date)[:4],),'factory':(r.factory,),'size':(r.size,),'glaze':(r.glaze if r.glaze else 'بدون لعاب',),'grade':(r.grade,),'type':(r.size,r.grade),'size_glaze':(r.size,r.glaze if r.glaze else 'بدون لعاب')}[group]
     groups=defaultdict(lambda:ZERO)
     for r in records: groups[key(r)]+=r.area
     if group == 'grade':
         grouped_items = sorted(groups.items(), key=lambda item: (item[0][0].rank, item[0][0].pk))
     elif group == 'type':
         grouped_items = sorted(groups.items(), key=lambda item: (str(item[0][0]), item[0][1].rank, item[0][1].pk))
+    elif group == 'size_glaze':
+        grouped_items = sorted(groups.items(), key=lambda item: (getattr(item[0][0], 'width', 0), getattr(item[0][0], 'length', 0), str(item[0][1])))
     else:
         grouped_items = sorted(groups.items(),key=lambda kv:tuple(str(v) for v in kv[0]))
     result=[]

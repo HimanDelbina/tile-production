@@ -529,6 +529,108 @@
   box-shadow: 0 2px 6px rgba(18, 44, 72, 0.2);
 }
 
+/* Glaze subrows styling */
+.mgmt-size-row td {
+  background: white;
+  border-bottom: 1px solid #eef2f6;
+}
+.mgmt-glaze-subrow td {
+  background: #fbfdfe;
+  font-size: 13px;
+  border-bottom: 1px dashed #e2e8f0;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+.mgmt-glaze-subrow:hover td {
+  background: #f0f7f9;
+}
+.glaze-cell-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 20px;
+}
+.glaze-branch-symbol {
+  color: var(--teal);
+  font-size: 14px;
+  font-weight: bold;
+}
+.glaze-name-link {
+  font-weight: 500;
+  color: #2c4964;
+}
+.glaze-share-tag {
+  font-size: 11px;
+  color: var(--muted);
+  background: #f0f4f8;
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.thickness-tag {
+  font-size: 11px;
+  color: #1e40af;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.glaze-badge-pill {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 7px;
+  background: rgba(21, 155, 154, 0.12);
+  color: var(--teal-dark);
+  border-radius: 12px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.mgmt-m-glazes-section {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #e2e8f0;
+}
+.mgmt-m-glazes-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.mgmt-m-glaze-item {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border: 1px solid #edf2f7;
+}
+.mgmt-m-glaze-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+  font-size: 12.5px;
+}
+.mgmt-m-glaze-grades {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.mgmt-m-glaze-grade-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 2px 6px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  text-decoration: none;
+  color: var(--ink);
+}
+
 /* Desktop / Mobile view toggle for tables */
 .desktop-table-view {
   display: block;
@@ -777,6 +879,18 @@
     <div>
       <span>تاریخ تولیدِ گزارش نمایش‌داده‌شده:</span>
       <strong>{{ active_summary.date_range|fa }}</strong>
+      {% if active_summary.sizes %}
+        <span style="margin-right: 8px;">• سایز:</span>
+        <strong>{{ active_summary.sizes|fa }}</strong>
+      {% endif %}
+      {% if active_summary.glazes %}
+        <span style="margin-right: 8px;">• لعاب:</span>
+        <strong>{{ active_summary.glazes|fa }}</strong>
+      {% endif %}
+      {% if active_summary.technical_types %}
+        <span style="margin-right: 8px;">• ضخامت:</span>
+        <strong>{{ active_summary.technical_types|fa }}</strong>
+      {% endif %}
     </div>
   </div>
   {% if quick_factory_buttons %}
@@ -828,9 +942,12 @@
               </thead>
               <tbody>
                 {% for row in ft.rows %}
-                  <tr>
+                  <tr class="mgmt-size-row">
                     <td class="align-right">
-                      <a href="{{ row.url }}" class="table-link">{{ row.size_label|fa }}</a>
+                      <a href="{{ row.url }}" class="table-link"><strong>{{ row.size_label|fa }}</strong></a>
+                      {% if row.glazes %}
+                        <span class="glaze-badge-pill">{{ row.glazes|length|fa }} لعاب</span>
+                      {% endif %}
                     </td>
                     <td><strong>{{ row.total_area|num }}</strong></td>
                     <td>{% if row.share_of_factory is not None %}{{ row.share_of_factory|num }}٪{% else %}—{% endif %}</td>
@@ -843,6 +960,30 @@
                       </td>
                     {% endfor %}
                   </tr>
+                  {% for gz in row.glazes %}
+                    <tr class="mgmt-glaze-subrow">
+                      <td class="align-right">
+                        <div class="glaze-cell-label">
+                          <span class="glaze-branch-symbol">↳</span>
+                          <a href="{{ gz.url }}" class="table-link glaze-name-link">لعاب {{ gz.glaze_label }}</a>
+                          {% if gz.thickness_label %}
+                            <span class="thickness-tag" title="ضخامت">{{ gz.thickness_label }}</span>
+                          {% endif %}
+                          <span class="glaze-share-tag">{% if gz.share_of_size is not None %}{{ gz.share_of_size|num }}٪ از سایز{% endif %}</span>
+                        </div>
+                      </td>
+                      <td><strong>{{ gz.total_area|num }}</strong></td>
+                      <td>{% if gz.share_of_factory is not None %}{{ gz.share_of_factory|num }}٪{% else %}—{% endif %}</td>
+                      {% for gc in gz.grades %}
+                        <td>
+                          <a class="cell-link" href="{{ gc.url }}" title="{{ gz.glaze_label }} - {{ gc.grade.name }}: {{ gc.area|num }} مترمربع">
+                            <span class="cell-area">{{ gc.area|num }}</span>
+                            <span class="cell-pct">{% if gc.percentage is not None %}{{ gc.percentage|num }}٪{% else %}—{% endif %}</span>
+                          </a>
+                        </td>
+                      {% endfor %}
+                    </tr>
+                  {% endfor %}
                 {% endfor %}
               </tbody>
               <tfoot>
@@ -894,6 +1035,34 @@
                   </a>
                 {% endfor %}
               </div>
+              {% if row.glazes %}
+                <div class="mgmt-m-glazes-section">
+                  <div class="mgmt-m-glazes-title">تفکیک طبق لعاب:</div>
+                  {% for gz in row.glazes %}
+                    <div class="mgmt-m-glaze-item">
+                      <div class="mgmt-m-glaze-head">
+                        <div>
+                          <a href="{{ gz.url }}" class="table-link"><strong>لعاب {{ gz.glaze_label }}</strong></a>
+                          {% if gz.thickness_label %}
+                            <span class="thickness-tag" style="margin-right:4px;">{{ gz.thickness_label }}</span>
+                          {% endif %}
+                        </div>
+                        <span class="mgmt-m-glaze-area"><strong>{{ gz.total_area|num }}</strong> م² <small>({% if gz.share_of_size is not None %}{{ gz.share_of_size|num }}٪ از سایز{% endif %})</small></span>
+                      </div>
+                      <div class="mgmt-m-glaze-grades">
+                        {% for gc in gz.grades %}
+                          {% if gc.area > 0 %}
+                            <a class="mgmt-m-glaze-grade-pill" href="{{ gc.url }}">
+                              <span class="grade-dot" style="background:{{ gc.grade.color }}"></span>
+                              <span>{{ gc.grade.name }}: {{ gc.area|num }} ({% if gc.percentage is not None %}{{ gc.percentage|num }}٪{% endif %})</span>
+                            </a>
+                          {% endif %}
+                        {% endfor %}
+                      </div>
+                    </div>
+                  {% endfor %}
+                </div>
+              {% endif %}
             </div>
           {% endfor %}
 
@@ -973,9 +1142,12 @@
             </thead>
             <tbody>
               {% for row in report.aggregated_table.rows %}
-                <tr>
+                <tr class="mgmt-size-row">
                   <td class="align-right">
-                    <a href="{{ row.url }}" class="table-link">{{ row.size_label|fa }}</a>
+                    <a href="{{ row.url }}" class="table-link"><strong>{{ row.size_label|fa }}</strong></a>
+                    {% if row.glazes %}
+                      <span class="glaze-badge-pill">{{ row.glazes|length|fa }} لعاب</span>
+                    {% endif %}
                   </td>
                   <td><strong>{{ row.total_area|num }}</strong></td>
                   <td>{% if row.share_of_total is not None %}{{ row.share_of_total|num }}٪{% else %}—{% endif %}</td>
@@ -988,6 +1160,30 @@
                     </td>
                   {% endfor %}
                 </tr>
+                {% for gz in row.glazes %}
+                  <tr class="mgmt-glaze-subrow">
+                    <td class="align-right">
+                      <div class="glaze-cell-label">
+                        <span class="glaze-branch-symbol">↳</span>
+                        <a href="{{ gz.url }}" class="table-link glaze-name-link">لعاب {{ gz.glaze_label }}</a>
+                        {% if gz.thickness_label %}
+                          <span class="thickness-tag" title="ضخامت">{{ gz.thickness_label }}</span>
+                        {% endif %}
+                        <span class="glaze-share-tag">{% if gz.share_of_size is not None %}{{ gz.share_of_size|num }}٪ از سایز{% endif %}</span>
+                      </div>
+                    </td>
+                    <td><strong>{{ gz.total_area|num }}</strong></td>
+                    <td>{% if gz.share_of_total is not None %}{{ gz.share_of_total|num }}٪{% else %}—{% endif %}</td>
+                    {% for gc in gz.grades %}
+                      <td>
+                        <a class="cell-link" href="{{ gc.url }}" title="{{ gz.glaze_label }} - {{ gc.grade.name }}: {{ gc.area|num }} مترمربع">
+                          <span class="cell-area">{{ gc.area|num }}</span>
+                          <span class="cell-pct">{% if gc.percentage is not None %}{{ gc.percentage|num }}٪{% else %}—{% endif %}</span>
+                        </a>
+                      </td>
+                    {% endfor %}
+                  </tr>
+                {% endfor %}
               {% endfor %}
             </tbody>
             <tfoot>
@@ -1039,6 +1235,34 @@
                 </a>
               {% endfor %}
             </div>
+            {% if row.glazes %}
+              <div class="mgmt-m-glazes-section">
+                <div class="mgmt-m-glazes-title">تفکیک طبق لعاب:</div>
+                {% for gz in row.glazes %}
+                    <div class="mgmt-m-glaze-item">
+                      <div class="mgmt-m-glaze-head">
+                        <div>
+                          <a href="{{ gz.url }}" class="table-link"><strong>لعاب {{ gz.glaze_label }}</strong></a>
+                          {% if gz.thickness_label %}
+                            <span class="thickness-tag" style="margin-right:4px;">{{ gz.thickness_label }}</span>
+                          {% endif %}
+                        </div>
+                        <span class="mgmt-m-glaze-area"><strong>{{ gz.total_area|num }}</strong> م² <small>({% if gz.share_of_size is not None %}{{ gz.share_of_size|num }}٪ از سایز{% endif %})</small></span>
+                      </div>
+                    <div class="mgmt-m-glaze-grades">
+                      {% for gc in gz.grades %}
+                        {% if gc.area > 0 %}
+                          <a class="mgmt-m-glaze-grade-pill" href="{{ gc.url }}">
+                            <span class="grade-dot" style="background:{{ gc.grade.color }}"></span>
+                            <span>{{ gc.grade.name }}: {{ gc.area|num }} ({% if gc.percentage is not None %}{{ gc.percentage|num }}٪{% endif %})</span>
+                          </a>
+                        {% endif %}
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            {% endif %}
           </div>
         {% endfor %}
 
@@ -1295,6 +1519,16 @@
             {{ filter_form.size.label_tag }}
             {{ filter_form.size }}
             {{ filter_form.size.errors }}
+          </div>
+          <div class="field span-2">
+            {{ filter_form.glaze.label_tag }}
+            {{ filter_form.glaze }}
+            {{ filter_form.glaze.errors }}
+          </div>
+          <div class="field span-2">
+            {{ filter_form.technical_type.label_tag }}
+            {{ filter_form.technical_type }}
+            {{ filter_form.technical_type.errors }}
           </div>
         </div>
 

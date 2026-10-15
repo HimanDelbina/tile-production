@@ -54,12 +54,26 @@
 
       {% if missing_techs %}
       <div style="flex: 1; min-width: 250px;">
-        <strong style="display: block; margin-bottom: 8px; color: #334155; font-size: 0.9rem;">انواع فنی جدید:</strong>
+        <strong style="display: block; margin-bottom: 8px; color: #334155; font-size: 0.9rem;">انواع ضخامت / فنی جدید:</strong>
         <div style="display: flex; flex-direction: column; gap: 6px;">
           {% for t in missing_techs %}
           <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.95rem;">
             <input type="checkbox" name="tech_types" value="{{ t }}" checked>
-            <span>نوع فنی <strong>«{{ t }}»</strong></span>
+            <span>ضخامت <strong>«{{ t }}»</strong></span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if missing_glazes %}
+      <div style="flex: 1; min-width: 250px;">
+        <strong style="display: block; margin-bottom: 8px; color: #334155; font-size: 0.9rem;">انواع لعاب جدید:</strong>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          {% for g in missing_glazes %}
+          <label style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.95rem;">
+            <input type="checkbox" name="glazes" value="{{ g }}" checked>
+            <span>لعاب <strong>«{{ g }}»</strong></span>
           </label>
           {% endfor %}
         </div>
@@ -73,9 +87,10 @@
   {% else %}
   <div style="color: #64748b; font-size: 0.9rem;">
     {% if missing_sizes %}سایزهای یافت‌نشده: {% for s in missing_sizes %}<strong>{{ s|fa }}</strong>{% if not forloop.last %}، {% endif %}{% endfor %}<br>{% endif %}
-    {% if missing_techs %}انواع فنی یافت‌نشده: {% for t in missing_techs %}<strong>«{{ t }}»</strong>{% if not forloop.last %}، {% endif %}{% endfor %}<br>{% endif %}
+    {% if missing_glazes %}لعاب‌های یافت‌نشده: {% for g in missing_glazes %}<strong>«{{ g }}»</strong>{% if not forloop.last %}، {% endif %}{% endfor %}<br>{% endif %}
+    {% if missing_techs %}انواع ضخامت یافت‌نشده: {% for t in missing_techs %}<strong>«{{ t }}»</strong>{% if not forloop.last %}، {% endif %}{% endfor %}<br>{% endif %}
     <span style="color: #b45309; display: inline-block; margin-top: 6px;">
-      * برای ایجاد این موارد با مدیر سامانه هماهنگ کنید یا سایز و نوع فنی معادل را در جدول زیر به صورت دستی انتخاب فرمایید.
+      * برای ایجاد این موارد با مدیر سامانه هماهنگ کنید یا گزینه‌های معادل را در جدول زیر به صورت دستی انتخاب فرمایید.
     </span>
   </div>
   {% endif %}
@@ -120,14 +135,15 @@
   <input type="hidden" name="action" value="save_rows">
   
   <div style="overflow-x: auto; margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
-    <table class="entry-table" style="width: 100%; min-width: 1050px; border-collapse: collapse; text-align: right;">
+    <table class="entry-table" style="width: 100%; min-width: 1100px; border-collapse: collapse; text-align: right;">
       <thead>
         <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
           <th style="padding: 10px; width: 45px; text-align: center;">ردیف</th>
           <th style="padding: 10px; min-width: 200px;">شرح اصلی کالا</th>
-          <th style="padding: 10px; min-width: 150px;">سایز</th>
-          <th style="padding: 10px; min-width: 120px;">درجه</th>
-          <th style="padding: 10px; min-width: 150px;">نوع فنی</th>
+          <th style="padding: 10px; min-width: 130px;">سایز</th>
+          <th style="padding: 10px; min-width: 100px;">درجه</th>
+          <th style="padding: 10px; min-width: 110px;">نوع لعاب</th>
+          <th style="padding: 10px; min-width: 130px;">نوع فنی (ضخامت)</th>
           <th style="padding: 10px; width: 90px; text-align: center;">جمع تولید</th>
           <th style="padding: 10px; width: 110px;">متراژ</th>
           <th style="padding: 10px; width: 95px; text-align: center;">وضعیت</th>
@@ -163,10 +179,20 @@
           </td>
           <td style="padding: 8px;">
             <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 4px;">
+              استخراج: <strong>{{ item.extracted_glaze_display }}</strong>
+            </div>
+            {{ item.form.glaze }}
+            {{ item.form.glaze.errors }}
+          </td>
+          <td style="padding: 8px;">
+            <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 4px;">
               استخراج: <strong>{{ item.extracted_tech_display }}</strong>
             </div>
             {{ item.form.technical_type }}
             {{ item.form.technical_type.errors }}
+            <div style="margin-top: 4px;">
+              <input type="text" name="{{ item.form.prefix }}-custom_thickness" value="{{ item.custom_thickness|default:'' }}" placeholder="یا ضخامت جدید..." style="width: 100%; min-width: 85px; font-size: 0.78rem; padding: 3px 6px; border: 1px dashed #94a3b8; border-radius: 4px;" title="در صورت تمایل می‌توانید ضخامت را به صورت دستی وارد کنید">
+            </div>
           </td>
           <td style="padding: 8px; text-align: center; font-size: 0.9rem; font-weight: 500;">
             {{ item.row.production_quantity|default:"—"|fa }}

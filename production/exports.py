@@ -40,7 +40,8 @@ def excel(ctx):
     summary=wb.create_sheet('خلاصه مدیریتی');summary.sheet_view.rightToLeft=True
     summary.append(['شاخص','مقدار','مبنا']);summary.append(['کل تولید',float(ctx['summary']['total']),'مترمربع؛ نتایج فیلترشده']);summary.append(['سهم درجه یک',float(ctx['summary']['first_share']/100) if ctx['summary']['first_share'] is not None else None,'همه درجات؛ سایر فیلترها حفظ می‌شوند']);summary['B3'].number_format='0.00%'
     chart_ranges=[]
-    for title,key in [('کارخانه‌ها','factories'),('سایزها','sizes'),('درجات','grades')]:
+    for title,key in [('کارخانه‌ها','factories'),('سایزها','sizes'),('لعاب‌ها','glazes'),('درجات','grades')]:
+        if not ctx['summary'].get(key): continue
         summary.append([]);s=summary.max_row+1;summary.append([title,'متراژ (مترمربع)','سهم از نتایج فیلترشده'])
         for item in ctx['summary'][key]:
             summary.append([item['label'],float(item['area']),float(item['share']/100) if item['share'] is not None else None]);summary.cell(summary.max_row,2).number_format='#,##0.00';summary.cell(summary.max_row,3).number_format='0.00%'

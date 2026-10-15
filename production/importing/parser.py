@@ -28,12 +28,67 @@ def normalize_text(text: str) -> str:
     return text.strip()
 
 
-# Regex for tile sizes (e.g. 60*120, 60x120, 60 × 120, 100*100)
+# Common ceramic tile dimension values in cm
+COMMON_DIMS = {
+    15, 20, 25, 30, 33, 40, 45, 50, 60, 70, 75, 80, 90, 100, 120,
+    140, 150, 160, 180, 240, 260, 278, 280, 300, 320
+}
+
+# Regex for tile sizes (e.g. 60*120, 60x120, 60 × 120, 100*100, 60-120, 60/120, 60 در 120)
 # Lookbehind and lookahead prevent matching decimals (e.g. 2.16), thickness, or codes (e.g. 805)
 SIZE_REGEX = re.compile(
-    r'(?<![\d.])(?P<w>\d{2,4})\s*[*xX×]\s*(?P<h>\d{2,4})(?![\d.])',
+    r'(?<![\d.])(?P<w>\d{2,3})\s*(?:[*xX×/\\]|\s+در\s+|\-)\s*(?P<h>\d{2,3})(?![\d.])',
     re.IGNORECASE
 )
+
+def parse_concat_size(token: str) -> Optional[Tuple[int, int]]:
+    """Parse concatenated dimensions like 60120, 40120, 100100, 6060, 8080."""
+    if not (4 <= len(token) <= 6) or not token.isdigit():
+        return None
+    for split_idx in (2, 3):
+        w_str = token[:split_idx]
+        h_str = token[split_idx:]
+        if w_str.isdigit() and h_str.isdigit():
+            w, h = int(w_str), int(h_str)
+            if w in COMMON_DIMS and h in COMMON_DIMS:
+                return (w, h)
+    return None
+
+def extract_size_spec(text: str) -> Tuple[Optional[Tuple[int, int]], Optional[str], Optional[str]]:
+    """Extract tile size (width, length) without touching database.
+    
+    Supports:
+        - Delimited sizes: 60*120, 60x120, 60 × 120, 60-120, 60/120, 60 در 120
+        - Concatenated sizes: 60120, 40120, 100100, 6060, 8080, etc.
+        - Prefixed with سایز / ابعاد (e.g. سایز 60120)
+    
+    Returns:
+        ((width, length), matched_string, error_message)
+    """
+    matches = list(SIZE_REGEX.finditer(text))
+    if matches:
+        unique_sizes = {(int(m.group('w')), int(m.group('h'))) for m in matches}
+        if len(unique_sizes) > 1:
+            return None, None, "چند سایز متفاوت در شرح کالا یافت شد (ابهام در سایز)."
+        w, h = next(iter(unique_sizes))
+        first_match_str = matches[0].group(0)
+        return (w, h), first_match_str, None
+
+    # Fallback to concatenated numbers (e.g. 60120, 40120, 100100, سایز 60120)
+    concat_matches = []
+    for m in re.finditer(r'(?:(?:سایز|ابعاد)\s*[:#]?\s*)?(?<![\d.])(?P<num>\d{4,6})(?![\d.])', text):
+        res = parse_concat_size(m.group('num'))
+        if res:
+            concat_matches.append((res, m.group(0)))
+
+    if concat_matches:
+        unique_concat = list(dict.fromkeys(s for s, _ in concat_matches))
+        if len(unique_concat) > 1:
+            return None, None, "چند سایز متفاوت در شرح کالا یافت شد (ابهام در سایز)."
+        return concat_matches[0][0], concat_matches[0][1], None
+
+    return None, None, "سایز در شرح کالا پیدا نشد."
+
 
 # Regex for Grade: matches درجه1, درجه 1, درجه6, درجهUNGRADE, ARTISTدرجهUNGRADE, etc.
 GRADE_REGEX = re.compile(
@@ -56,25 +111,6 @@ _WORD_TO_GRADE = {
     'پنج': '5',
     'شش': '6',
 }
-
-def extract_size_spec(text: str) -> Tuple[Optional[Tuple[int, int]], Optional[str], Optional[str]]:
-    """Extract tile size (width, length) without touching database.
-    
-    Returns:
-        ((width, length), matched_string, error_message)
-    """
-    matches = list(SIZE_REGEX.finditer(text))
-    if not matches:
-        return None, None, "سایز در شرح کالا پیدا نشد."
-    
-    unique_sizes = {(int(m.group('w')), int(m.group('h'))) for m in matches}
-    if len(unique_sizes) > 1:
-        return None, None, "چند سایز متفاوت در شرح کالا یافت شد (ابهام در سایز)."
-    
-    w, h = next(iter(unique_sizes))
-    first_match_str = matches[0].group(0)
-    return (w, h), first_match_str, None
-
 
 def extract_grade_spec(text: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """Extract standardized grade code ('1', '2', '6', 'UNGRADE') without touching database.
@@ -115,58 +151,83 @@ def extract_grade_spec(text: str) -> Tuple[Optional[str], Optional[str], Optiona
 
 
 def extract_piece_area(text: str) -> Tuple[Optional[Decimal], Optional[str]]:
-    """Extract piece area from description if present (e.g. مساحت 2.16 or مساحت 2)."""
+    """Extract piece area from description if present (e.g. مساحت 2.16 or مساحت 2 or (2.4))."""
     m = PIECE_AREA_REGEX.search(text)
-    if not m:
-        return None, None
-    try:
-        val = Decimal(m.group('area'))
-        return val, m.group(0)
-    except Exception:
-        return None, None
+    if m:
+        try:
+            val = Decimal(m.group('area'))
+            return val, m.group(0)
+        except Exception:
+            pass
+
+    # Fallback: parenthesized area e.g. (2.4), (1.44), (2.16)
+    m_paren = re.search(r'\(\s*(?P<area>\d+(?:\.\d+)?)\s*\)', text)
+    if m_paren:
+        try:
+            val = Decimal(m_paren.group('area'))
+            if Decimal('0.1') <= val <= Decimal('20.0'):
+                return val, m_paren.group(0)
+        except Exception:
+            pass
+
+    return None, None
+
+
+# Regex for tile thickness (ضخامت): e.g. 10MIL, 12MIL, 10 mil, 10میل, 10 میلیمتر, ضخامت 10
+THICKNESS_REGEX = re.compile(
+    r'(?:\bضخامت\s*[:#]?\s*(?P<th1>\d{1,2}(?:\.\d+)?)\s*(?:mil|میل|میلی\s*متر|میلیمتر|mm)?\b)|'
+    r'(?:\b(?P<th2>\d{1,2}(?:\.\d+)?)\s*(?:mil|میل|میلی\s*متر|میلیمتر|mm)\b)',
+    re.IGNORECASE
+)
+
+# Regex patterns for Glaze types (پولیش، مات، براق)
+GLAZE_POLISH_REGEX = re.compile(r'\b(?:نانو\s*پولیش|سوپر\s*پولیش|پولیش|polish)\b', re.IGNORECASE)
+GLAZE_MATTE_REGEX = re.compile(r'\b(?:نیمه\s*مات|مات|matte)\b', re.IGNORECASE)
+GLAZE_GLOSSY_REGEX = re.compile(r'\b(?:سوپر\s*براق|براق|glossy)\b', re.IGNORECASE)
+GLAZE_SUGAR_REGEX = re.compile(r'\b(?:شوگر|sugar)\b', re.IGNORECASE)
+
+def extract_glaze_spec(text: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Extract tile glaze (لعاب: پولیش, مات, براق, etc.) without touching database.
+    
+    Returns:
+        (canonical_glaze_name, matched_string, error_message)
+    """
+    matches = []
+    m = GLAZE_POLISH_REGEX.search(text)
+    if m:
+        matches.append(('پولیش', m.group(0)))
+    m = GLAZE_MATTE_REGEX.search(text)
+    if m:
+        matches.append(('مات', m.group(0)))
+    m = GLAZE_GLOSSY_REGEX.search(text)
+    if m:
+        matches.append(('براق', m.group(0)))
+    m = GLAZE_SUGAR_REGEX.search(text)
+    if m:
+        matches.append(('شوگر', m.group(0)))
+
+    if not matches:
+        return None, None, None
+
+    unique_names = list(dict.fromkeys(n for n, _ in matches))
+    if len(unique_names) > 1:
+        return None, None, "چند نوع لعاب متفاوت در شرح کالا یافت شد (ابهام در لعاب)."
+
+    name, match_str = matches[0]
+    return name, match_str, None
 
 
 def extract_technical_type_spec(text: str) -> Tuple[Optional[str], Optional[str]]:
-    """Extract explicit technical specifications only.
-    
-    Supported specifications:
-    - پرسلان (or porcelain)
-    - نانو پولیش (or پولیش)
-    - Thickness: e.g. 10MIL, 12MIL
-    
-    Explicitly excludes:
-    - Design names (صاحارا, لایت گری, کارولین, زئوس, etc.)
-    - Area (مساحت)
-    - Size (60*120, 100*100)
-    - Grade (درجه 1, درجهUNGRADE, etc.)
-    - Brand/code words (CH, ARTIST, مهتاب, YT 805, etc.)
-    - Does NOT guess 'پرسلان' if absent in description.
+    """Extract tile thickness (ضخامت) as technical specification.
     
     Returns:
-        (canonical_technical_type_name, error_message)
+        (canonical_thickness_name, error_message)
     """
-    parts = []
-    
-    # Check porcelain
-    has_porcelain = bool(re.search(r'\b(?:پرسلان|porcelain)\b', text, re.IGNORECASE))
-    if has_porcelain:
-        parts.append('پرسلان')
-        
-    # Check treatment
-    if 'نانو پولیش' in text:
-        parts.append('نانو پولیش')
-    elif re.search(r'\b(?:پولیش|polish)\b', text, re.IGNORECASE):
-        parts.append('پولیش')
-        
-    # Check thickness (e.g. 10MIL, 12MIL)
-    m_mil = re.search(r'\b(\d{1,2})\s*mil\b', text, re.IGNORECASE)
-    if m_mil:
-        parts.append(f"{m_mil.group(1)}MIL")
-        
-    if not parts:
+    m = THICKNESS_REGEX.search(text)
+    if not m:
         return None, None
-        
-    canonical_name = " ".join(parts)
+    val = m.group('th1') or m.group('th2')
+    canonical_name = f"{val}MIL"
     return canonical_name, None
 
 
@@ -182,7 +243,10 @@ def parse_description(raw: str) -> Dict[str, Any]:
         - grade_code: '1', '2', '6', 'UNGRADE' or None
         - grade_match: matching substring
         - grade_error: extraction error message if any
-        - technical_type_name: canonical name or None
+        - technical_type_name: canonical thickness (e.g. 10MIL) or None
+        - glaze_name: canonical glaze ('پولیش', 'مات', 'براق') or None
+        - glaze_match: matching substring
+        - glaze_error: extraction error message if any
         - piece_area: Decimal area per piece or None
         - cleaned_description: text with size, grade, and area tokens removed
         - errors: list of extraction error messages
@@ -194,6 +258,7 @@ def parse_description(raw: str) -> Dict[str, Any]:
     size_spec, size_match, size_err = extract_size_spec(text)
     grade_code, grade_match, grade_err = extract_grade_spec(text)
     tech_name, tech_err = extract_technical_type_spec(text)
+    glaze_name, glaze_match, glaze_err = extract_glaze_spec(text)
     piece_area, area_match = extract_piece_area(text)
     
     errors = []
@@ -203,6 +268,8 @@ def parse_description(raw: str) -> Dict[str, Any]:
         errors.append(grade_err)
     if tech_err:
         errors.append(tech_err)
+    if glaze_err:
+        errors.append(glaze_err)
         
     # Clean description for display
     cleaned = text
@@ -210,6 +277,8 @@ def parse_description(raw: str) -> Dict[str, Any]:
         cleaned = cleaned.replace(size_match, "")
     if grade_match:
         cleaned = cleaned.replace(grade_match, "")
+    if glaze_match:
+        cleaned = cleaned.replace(glaze_match, "")
     if area_match:
         cleaned = cleaned.replace(area_match, "")
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
@@ -224,6 +293,9 @@ def parse_description(raw: str) -> Dict[str, Any]:
         "grade_match": grade_match,
         "grade_error": grade_err,
         "technical_type_name": tech_name,
+        "glaze_name": glaze_name,
+        "glaze_match": glaze_match,
+        "glaze_error": glaze_err,
         "piece_area": piece_area,
         "cleaned_description": cleaned,
         "errors": errors,

@@ -13,19 +13,18 @@ from django.http import HttpResponse,JsonResponse,HttpResponseNotAllowed
 from django.shortcuts import get_object_or_404,redirect,render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
-from .models import Factory,Size,Grade,Profile,Production,Audit,Submission
+from .models import Factory,Size,Grade,Glaze,Profile,Production,Audit,Submission
 from .forms import BatchHeader,RowSet,ProductionForm,FilterForm,UserForm,ManagementFilterForm
 from .dates import period,jalali,normalize
 from .permissions import admin_required,can_write,factories_for,records_for,role,can_manage_batch
 from .services import create_batch,change_record,duplicate_rows,bulk_delete_records
 from .reporting import summarize,report_table,filtered
 from .management_reporting import get_management_report_data
-from openpyxl import load_workbook
 from .importing.parser import parse_description
 from .importing.matcher import match_and_evaluate_row, match_size, match_grade, match_technical_type
 from .importing.reader import read_excel_import_file
 from .forms import ExcelUploadForm, ImportRowEditForm
-from .models import ProductionImportBatch, ProductionImportRow, TechnicalType, Size, Grade
+from .models import ProductionImportBatch, ProductionImportRow, TechnicalType, Size, Grade, Glaze
 
 def report_context(request,dashboard=False):
     params=request.GET.copy()
@@ -106,6 +105,12 @@ def management_report(request, template_name='production/management_preview.html
         if data.get('size'):
             active_summary['sizes'] = '، '.join(str(s) for s in data['size'])
 
+        if data.get('glaze'):
+            active_summary['glazes'] = '، '.join(g.name for g in data['glaze'])
+
+        if data.get('technical_type'):
+            active_summary['technical_types'] = '، '.join(t.name for t in data['technical_type'])
+
     allowed_factories = factories_for(request.user).order_by('name')
     selected_factories = data.get('factory') if valid else None
     selected_factory_pks = set(selected_factories.values_list('pk', flat=True)) if selected_factories else set()
@@ -166,7 +171,7 @@ def create(request):
     if request.method=='POST':
         hv=header.is_valid(); rv=rowset.is_valid()
         if hv and rv:
-            rows=[{k:d[k] for k in ('size','grade','area','notes')} for d in rowset.cleaned_data if d and not d.get('DELETE')]
+            rows=[{k:d[k] for k in ('size','glaze','grade','area','notes')} for d in rowset.cleaned_data if d and not d.get('DELETE')]
             h=header.cleaned_data
             warning=duplicate_rows(request.user,h['factory'],h['date'],rows)
             if not warning or h['confirm_duplicate'] or Submission.objects.filter(user=request.user,key=h['token']).exists():
@@ -287,7 +292,7 @@ def history(request,pk):
     obj=get_object_or_404(Production.objects.filter(factory__in=factories_for(request.user)),pk=pk)
     return render(request,'production/history.html',{'title':'تاریخچه تولید','obj':obj,'events':obj.audit_set.select_related('actor').all()})
 
-MASTER={'factories':(Factory,'کارخانه‌ها',['name','active']),'sizes':(Size,'سایزها',['width','length','active']),'grades':(Grade,'درجات',['name','rank','color','active'])}
+MASTER={'factories':(Factory,'کارخانه‌ها',['name','active']),'sizes':(Size,'سایزها',['width','length','active']),'glazes':(Glaze,'لعاب‌ها',['name','active']),'grades':(Grade,'درجات',['name','rank','color','active'])}
 @login_required
 def master(request,kind='factories',pk=None):
     admin_required(request.user)
@@ -486,10 +491,12 @@ def import_upload(request):
                 extracted_width=w,
                 extracted_length=l,
                 extracted_grade_code=parsed_desc.get('grade_code') or '',
+                extracted_glaze_name=parsed_desc.get('glaze_name') or '',
                 extracted_technical_type_name=parsed_desc.get('technical_type_name') or '',
                 extracted_piece_area=parsed_desc.get('piece_area'),
                 is_reversed_size=eval_res['is_reversed_size'],
                 size=eval_res['size'],
+                glaze=eval_res.get('glaze'),
                 grade=eval_res['grade'],
                 technical_type=eval_res['technical_type'],
                 area=eval_res['area'] if eval_res['area'] is not None else Decimal('0.00'),
@@ -545,10 +552,12 @@ def import_preview(request, token):
                     extracted_width=w,
                     extracted_length=l,
                     extracted_grade_code=parsed_desc.get('grade_code') or '',
+                    extracted_glaze_name=parsed_desc.get('glaze_name') or '',
                     extracted_technical_type_name=parsed_desc.get('technical_type_name') or '',
                     extracted_piece_area=parsed_desc.get('piece_area'),
                     is_reversed_size=eval_res['is_reversed_size'],
                     size=eval_res['size'],
+                    glaze=eval_res.get('glaze'),
                     grade=eval_res['grade'],
                     technical_type=eval_res['technical_type'],
                     area=eval_res['area'] if eval_res['area'] is not None else Decimal('0.00'),
@@ -574,9 +583,11 @@ def import_preview(request, token):
 
             selected_sizes = request.POST.getlist('sizes')
             selected_techs = request.POST.getlist('tech_types')
+            selected_glazes = request.POST.getlist('glazes')
             
             created_sizes = 0
             created_techs = 0
+            created_glazes = 0
             
             for s_str in selected_sizes:
                 m = re.search(r'(\d+)\s*[*xX×]\s*(\d+)', s_str)
@@ -591,6 +602,12 @@ def import_preview(request, token):
                 if t_clean and not TechnicalType.objects.filter(name__iexact=t_clean).exists():
                     TechnicalType.objects.create(name=t_clean)
                     created_techs += 1
+
+            for g_str in selected_glazes:
+                g_clean = g_str.strip()
+                if g_clean and not Glaze.objects.filter(name__iexact=g_clean).exists():
+                    Glaze.objects.create(name=g_clean)
+                    created_glazes += 1
                     
             # Immediately re-match all rows of this batch against updated base data
             for row in batch.rows.all():
@@ -601,12 +618,14 @@ def import_preview(request, token):
                     quantity=row.production_quantity,
                     area=Decimal(user_edited['area']) if user_edited.get('area') else row.area,
                     current_size=Size.objects.filter(pk=user_edited.get('size'), active=True).first() if user_edited.get('size') else None,
+                    current_glaze=Glaze.objects.filter(pk=user_edited.get('glaze'), active=True).first() if user_edited.get('glaze') else None,
                     current_grade=Grade.objects.filter(pk=user_edited.get('grade'), active=True).first() if user_edited.get('grade') else None,
                     current_tech=TechnicalType.objects.filter(pk=user_edited.get('technical_type')).first() if user_edited.get('technical_type') else None,
                     user_edited_fields=user_edited if user_edited else None,
                     source_errors=row.source_errors,
                 )
                 row.size = eval_res['size']
+                row.glaze = eval_res['glaze']
                 row.grade = eval_res['grade']
                 row.technical_type = eval_res['technical_type']
                 row.is_reversed_size = eval_res['is_reversed_size']
@@ -614,7 +633,7 @@ def import_preview(request, token):
                 row.error_message = eval_res['error_message']
                 row.save()
                 
-        messages.success(request, f"اطلاعات پایه ایجاد شد ({created_sizes} سایز، {created_techs} نوع فنی) و پیش‌نمایش به‌روزرسانی گردید.")
+        messages.success(request, f"اطلاعات پایه ایجاد شد ({created_sizes} سایز، {created_techs} نوع فنی/ضخامت، {created_glazes} لعاب) و پیش‌نمایش به‌روزرسانی گردید.")
         return redirect('import_preview', token=batch.token)
 
     # Action 2: Reprocess previous preview (preserves manual overrides and source errors)
@@ -632,6 +651,7 @@ def import_preview(request, token):
                 row.extracted_width = w
                 row.extracted_length = l
                 row.extracted_grade_code = parsed.get('grade_code') or ''
+                row.extracted_glaze_name = parsed.get('glaze_name') or ''
                 row.extracted_technical_type_name = parsed.get('technical_type_name') or ''
                 row.extracted_piece_area = parsed.get('piece_area')
                 
@@ -647,12 +667,14 @@ def import_preview(request, token):
                     quantity=row.production_quantity,
                     area=Decimal(user_edited['area']) if user_edited.get('area') else row.area,
                     current_size=Size.objects.filter(pk=user_edited.get('size'), active=True).first() if user_edited.get('size') else None,
+                    current_glaze=Glaze.objects.filter(pk=user_edited.get('glaze'), active=True).first() if user_edited.get('glaze') else None,
                     current_grade=Grade.objects.filter(pk=user_edited.get('grade'), active=True).first() if user_edited.get('grade') else None,
                     current_tech=TechnicalType.objects.filter(pk=user_edited.get('technical_type')).first() if user_edited.get('technical_type') else None,
                     user_edited_fields=user_edited if user_edited else None,
                     source_errors=row.source_errors,
                 )
                 row.size = eval_res['size']
+                row.glaze = eval_res['glaze']
                 row.grade = eval_res['grade']
                 row.technical_type = eval_res['technical_type']
                 row.is_reversed_size = eval_res['is_reversed_size']
@@ -685,14 +707,24 @@ def import_preview(request, token):
                 if form.is_valid():
                     cd = form.cleaned_data
                     row_obj.size = cd['size']
+                    row_obj.glaze = cd['glaze']
                     row_obj.grade = cd['grade']
-                    row_obj.technical_type = cd['technical_type']
+
+                    custom_th = (cd.get('custom_thickness') or request.POST.get(f"r_{row_pk}-custom_thickness", "")).strip()
+                    if custom_th:
+                        tt_obj, _ = TechnicalType.objects.get_or_create(name=custom_th)
+                        row_obj.technical_type = tt_obj
+                    else:
+                        row_obj.technical_type = cd['technical_type']
+
                     row_obj.area = cd['area']
                     row_obj.notes = cd['notes']
                     row_obj.edited_data = {
                         'size': cd['size'].pk if cd['size'] else None,
+                        'glaze': cd['glaze'].pk if cd['glaze'] else None,
                         'grade': cd['grade'].pk if cd['grade'] else None,
-                        'technical_type': cd['technical_type'].pk if cd['technical_type'] else None,
+                        'technical_type': row_obj.technical_type.pk if row_obj.technical_type else None,
+                        'custom_thickness': custom_th,
                         'area': str(cd['area']),
                         'notes': cd['notes'],
                     }
@@ -703,8 +735,9 @@ def import_preview(request, token):
                         quantity=row_obj.production_quantity,
                         area=cd['area'],
                         size_obj=cd['size'],
+                        glaze_obj=cd['glaze'],
                         grade_obj=cd['grade'],
-                        tech_obj=cd['technical_type'],
+                        tech_obj=row_obj.technical_type,
                         source_errors=row_obj.source_errors,
                         is_reversed_size=row_obj.is_reversed_size,
                     )
@@ -731,6 +764,7 @@ def import_preview(request, token):
 
     # Detect unique missing base data for suggestions
     missing_sizes_set = set()
+    missing_glazes_set = set()
     missing_techs_set = set()
     
     for r in batch.rows.all():
@@ -738,25 +772,33 @@ def import_preview(request, token):
             w, l = r.extracted_width, r.extracted_length
             if not Size.objects.filter(Q(width=w, length=l) | Q(width=l, length=w)).exists():
                 missing_sizes_set.add((w, l))
+        if r.extracted_glaze_name:
+            g_name = r.extracted_glaze_name.strip()
+            if g_name and not Glaze.objects.filter(name__iexact=g_name, active=True).exists():
+                missing_glazes_set.add(g_name)
         if r.extracted_technical_type_name:
             t_name = r.extracted_technical_type_name.strip()
             if t_name and not TechnicalType.objects.filter(name__iexact=t_name).exists():
                 missing_techs_set.add(t_name)
                 
     missing_sizes = [f"{w}×{l}" for w, l in sorted(missing_sizes_set)]
+    missing_glazes = sorted(missing_glazes_set)
     missing_techs = sorted(missing_techs_set)
     
     # Prepare row items with initialized edit forms
     row_items = []
     is_confirmed = (batch.status == 'confirmed')
     for r in batch.rows.all():
+        user_edited = r.edited_data or {}
         form = ImportRowEditForm(
             prefix=f"r_{r.pk}",
             initial={
                 'row_id': r.pk,
                 'size': r.size_id if r.size else None,
+                'glaze': r.glaze_id if r.glaze else None,
                 'grade': r.grade_id if r.grade else None,
                 'technical_type': r.technical_type_id if r.technical_type else None,
+                'custom_thickness': user_edited.get('custom_thickness', ''),
                 'area': r.area,
                 'notes': r.notes,
             }
@@ -769,8 +811,10 @@ def import_preview(request, token):
             'row': r,
             'form': form,
             'extracted_size_display': f"{r.extracted_width} × {r.extracted_length}" if r.extracted_width and r.extracted_length else "—",
+            'extracted_glaze_display': r.extracted_glaze_name or "—",
             'extracted_grade_display': r.extracted_grade_code or "—",
             'extracted_tech_display': r.extracted_technical_type_name or "—",
+            'custom_thickness': user_edited.get('custom_thickness', ''),
         })
         
     has_errors = batch.rows.filter(status='error').exists()
@@ -780,6 +824,7 @@ def import_preview(request, token):
         'batch': batch,
         'row_items': row_items,
         'missing_sizes': missing_sizes,
+        'missing_glazes': missing_glazes,
         'missing_techs': missing_techs,
         'is_admin': (role(request.user) == 'admin'),
         'can_confirm': can_confirm,
@@ -845,6 +890,7 @@ def import_confirm(request, token):
                 quantity=row.production_quantity,
                 area=row.area,
                 size_obj=row.size,
+                glaze_obj=row.glaze,
                 grade_obj=row.grade,
                 tech_obj=row.technical_type,
                 source_errors=row.source_errors,
@@ -863,11 +909,12 @@ def import_confirm(request, token):
         # 7. Create Production and Audit records for each row
         confirmed_count = 0
         try:
-            for row in batch.rows.select_related('size', 'grade', 'technical_type').all():
+            for row in batch.rows.select_related('size', 'glaze', 'grade', 'technical_type').all():
                 prod = Production(
                     factory=batch.factory,
                     date=batch.date,
                     size=row.size,
+                    glaze=row.glaze,
                     grade=row.grade,
                     technical_type=row.technical_type,
                     area=row.area,

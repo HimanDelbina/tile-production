@@ -1,11 +1,14 @@
+import re
 from decimal import Decimal
 from typing import Optional, Dict, Any, List, Tuple
-from ..models import Size, Grade, TechnicalType
+from django.db.models import Q
+from ..models import Size, Grade, Glaze, TechnicalType
 from .parser import normalize_text
 
 _PERSIAN_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")
 
 _TO_PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
+
 
 def match_size(width: Optional[int], length: Optional[int]) -> Tuple[Optional[Size], bool, Optional[str]]:
     """Match extracted width and length against database Size records.
@@ -76,8 +79,31 @@ def match_grade(grade_code: Optional[str]) -> Tuple[Optional[Grade], Optional[st
     return None, f"درجه {code_display} استخراج شد، اما گزینه متناظر تعریف نشده است."
 
 
+def match_glaze(glaze_name: Optional[str]) -> Tuple[Optional[Glaze], Optional[str]]:
+    """Match extracted glaze name ('پولیش', 'مات', 'براق') against Glaze records.
+    
+    Returns:
+        (glaze_instance, message)
+    """
+    if not glaze_name:
+        return None, None
+        
+    g = Glaze.objects.filter(name__iexact=glaze_name, active=True).first()
+    if g:
+        return g, None
+        
+    norm_target = normalize_text(glaze_name).replace(" ", "")
+    for item in Glaze.objects.filter(active=True):
+        if normalize_text(item.name).replace(" ", "") == norm_target:
+            return item, None
+            
+    return None, f"نوع لعاب «{glaze_name}» در اطلاعات پایه تعریف نشده است."
+
+
 def match_technical_type(tech_name: Optional[str]) -> Tuple[Optional[TechnicalType], Optional[str]]:
-    """Match extracted canonical technical type name against TechnicalType records.
+    """Match extracted canonical thickness name against TechnicalType records.
+    
+    Flexible matching for e.g. 10MIL, 10 mil, 10 میل, 10 میلی‌متر, 10.
     
     Returns:
         (technical_type_instance, message)
@@ -85,17 +111,27 @@ def match_technical_type(tech_name: Optional[str]) -> Tuple[Optional[TechnicalTy
     if not tech_name:
         return None, None
         
-    # Search by exact name or normalized name
+    # 1. Search by exact name
     tt = TechnicalType.objects.filter(name__iexact=tech_name).first()
     if tt:
         return tt, None
         
-    norm_target = normalize_text(tech_name).replace(" ", "")
+    # 2. Normalized match (without spaces)
+    norm_target = normalize_text(tech_name).replace(" ", "").upper()
     for item in TechnicalType.objects.all():
-        if normalize_text(item.name).replace(" ", "") == norm_target:
+        if normalize_text(item.name).replace(" ", "").upper() == norm_target:
             return item, None
             
-    return None, f"نوع فنی «{tech_name}» استخراج شد، اما در اطلاعات پایه تعریف نشده است."
+    # 3. Numeric thickness match (e.g. '10' in '10MIL' matches '10 میل' or '10')
+    m_num = re.search(r'(\d+(?:\.\d+)?)', tech_name)
+    if m_num:
+        num_val = m_num.group(1)
+        for item in TechnicalType.objects.all():
+            item_num = re.search(r'(\d+(?:\.\d+)?)', item.name)
+            if item_num and item_num.group(1) == num_val:
+                return item, None
+
+    return None, f"ضخامت «{tech_name}» استخراج شد، اما در اطلاعات پایه تعریف نشده است."
 
 
 from .validation import validate_import_row
@@ -105,6 +141,7 @@ def match_and_evaluate_row(
     quantity: Optional[Decimal] = None,
     area: Optional[Decimal] = None,
     current_size: Optional[Size] = None,
+    current_glaze: Optional[Glaze] = None,
     current_grade: Optional[Grade] = None,
     current_tech: Optional[TechnicalType] = None,
     user_edited_fields: Optional[Dict[str, Any]] = None,
@@ -132,7 +169,22 @@ def match_and_evaluate_row(
         w, l = parsed_data.get('size') if parsed_data.get('size') else (None, None)
         size_obj, is_reversed, size_msg = match_size(w, l)
         
-    # 2. Match or preserve Grade
+    # 2. Match or preserve Glaze
+    glaze_msg = None
+    if 'glaze' in user_edited:
+        if isinstance(user_edited['glaze'], Glaze):
+            glaze_obj = user_edited['glaze']
+        elif user_edited['glaze']:
+            glaze_obj = Glaze.objects.filter(pk=user_edited['glaze'], active=True).first()
+        else:
+            glaze_obj = None
+    elif current_glaze:
+        glaze_obj = current_glaze
+    else:
+        glaze_name = parsed_data.get('glaze_name')
+        glaze_obj, glaze_msg = match_glaze(glaze_name)
+
+    # 3. Match or preserve Grade
     grade_msg = None
     if 'grade' in user_edited and user_edited['grade']:
         if isinstance(user_edited['grade'], Grade):
@@ -145,7 +197,7 @@ def match_and_evaluate_row(
         grade_code = parsed_data.get('grade_code')
         grade_obj, grade_msg = match_grade(grade_code)
         
-    # 3. Match or preserve TechnicalType
+    # 4. Match or preserve TechnicalType (Thickness)
     tech_msg = None
     if 'technical_type' in user_edited:
         if isinstance(user_edited['technical_type'], TechnicalType):
@@ -160,7 +212,7 @@ def match_and_evaluate_row(
         tech_name = parsed_data.get('technical_type_name')
         tech_obj, tech_msg = match_technical_type(tech_name)
         
-    # 4. Area
+    # 5. Area
     raw_area = user_edited.get('area') if 'area' in user_edited else area
     
     # Run unified validation service
@@ -169,11 +221,13 @@ def match_and_evaluate_row(
         quantity=quantity,
         area=raw_area,
         size_obj=size_obj,
+        glaze_obj=glaze_obj,
         grade_obj=grade_obj,
         tech_obj=tech_obj,
         source_errors=source_errors,
         is_reversed_size=is_reversed,
         size_msg=size_msg,
+        glaze_msg=glaze_msg,
         grade_msg=grade_msg,
         tech_msg=tech_msg,
     )

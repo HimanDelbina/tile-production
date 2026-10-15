@@ -55,6 +55,7 @@ def read_excel_import_file(file_path: str, sheet_name: Optional[str] = None) -> 
     desc_idx = None
     qty_idx = None
     area_idx = None
+    size_idx = None
     
     for idx, cell in enumerate(header_row_raw):
         if cell.value is None:
@@ -66,6 +67,8 @@ def read_excel_import_file(file_path: str, sheet_name: Optional[str] = None) -> 
             qty_idx = idx
         elif "متراژ" in header_text:
             area_idx = idx
+        elif "سایز" in header_text or "ابعاد" in header_text:
+            size_idx = idx
             
     missing_cols = []
     if desc_idx is None:
@@ -109,6 +112,12 @@ def read_excel_import_file(file_path: str, sheet_name: Optional[str] = None) -> 
                 
         # Parse description
         raw_desc = str(cell_desc_data.value if cell_desc_data and cell_desc_data.value is not None else "").strip()
+        if size_idx is not None and size_idx < len(r_data):
+            cell_size_data = r_data[size_idx]
+            if cell_size_data and cell_size_data.value is not None:
+                size_str = str(cell_size_data.value).strip()
+                if size_str and size_str not in raw_desc:
+                    raw_desc = f"{raw_desc} {size_str}"
         
         # Parse quantity
         quantity_val = None

@@ -15,7 +15,8 @@ class NamedBase(models.Model):
 class Factory(NamedBase):
     class Meta(NamedBase.Meta): verbose_name='کارخانه'; verbose_name_plural='کارخانه‌ها'
 
-
+class Glaze(NamedBase):
+    class Meta(NamedBase.Meta): verbose_name='لعاب'; verbose_name_plural='لعاب‌ها'
 
 class Size(models.Model):
     width = models.PositiveIntegerField('عرض (سانتی‌متر)',validators=[MinValueValidator(1)])
@@ -42,6 +43,7 @@ class Production(models.Model):
     factory=models.ForeignKey(Factory,on_delete=models.PROTECT,verbose_name='کارخانه')
     date=models.DateField('تاریخ تولید')
     size=models.ForeignKey(Size,on_delete=models.PROTECT,verbose_name='سایز')
+    glaze=models.ForeignKey(Glaze,null=True,blank=True,on_delete=models.PROTECT,verbose_name='لعاب')
     grade=models.ForeignKey(Grade,on_delete=models.PROTECT,verbose_name='درجه')
     technical_type = models.ForeignKey('TechnicalType', null=True, blank=True, on_delete=models.SET_NULL, verbose_name='نوع فنی')
     area=models.DecimalField('متراژ (مترمربع)',max_digits=14,decimal_places=2,validators=[MinValueValidator(Decimal('0.01'))])
@@ -56,7 +58,7 @@ class Production(models.Model):
         indexes=[models.Index(fields=['factory','date']),models.Index(fields=['deleted_at','date'])]
     def snapshot(self):
         from .dates import jalali
-        return {'شناسه':str(self.pk),'کارخانه':str(self.factory),'تاریخ تولید':jalali(self.date),'سایز':str(self.size),'درجه':str(self.grade),'متراژ':str(self.area),'توضیحات':self.notes,'ثبت‌کننده':self.created_by.get_full_name() or self.created_by.username,'نسخه':self.version,'وضعیت':'حذف‌شده' if self.deleted_at else 'فعال'}
+        return {'شناسه':str(self.pk),'کارخانه':str(self.factory),'تاریخ تولید':jalali(self.date),'سایز':str(self.size),'لعاب':str(self.glaze) if self.glaze else '—','درجه':str(self.grade),'متراژ':str(self.area),'توضیحات':self.notes,'ثبت‌کننده':self.created_by.get_full_name() or self.created_by.username,'نسخه':self.version,'وضعیت':'حذف‌شده' if self.deleted_at else 'فعال'}
 
 class Audit(models.Model):
     production=models.ForeignKey(Production,on_delete=models.PROTECT)
@@ -82,8 +84,8 @@ class TechnicalType(models.Model):
     description = models.TextField('شرح', blank=True)
 
     class Meta:
-        verbose_name = 'نوع فنی'
-        verbose_name_plural = 'انواع فنی'
+        verbose_name = 'نوع فنی (ضخامت)'
+        verbose_name_plural = 'انواع فنی (ضخامت)'
         ordering = ['name']
 
     def __str__(self):
@@ -126,12 +128,14 @@ class ProductionImportRow(models.Model):
     extracted_width = models.PositiveIntegerField('عرض استخراج‌شده', null=True, blank=True)
     extracted_length = models.PositiveIntegerField('طول استخراج‌شده', null=True, blank=True)
     extracted_grade_code = models.CharField('کد درجه استخراج‌شده', max_length=50, blank=True)
+    extracted_glaze_name = models.CharField('لعاب استخراج‌شده', max_length=100, blank=True)
     extracted_technical_type_name = models.CharField('نوع فنی استخراج‌شده', max_length=200, blank=True)
     extracted_piece_area = models.DecimalField('ضریب مساحت واحد تولید استخراج‌شده', max_digits=10, decimal_places=4, null=True, blank=True)
     is_reversed_size = models.BooleanField('تطبیق سایز معکوس', default=False)
     size = models.ForeignKey(Size, null=True, blank=True, on_delete=models.SET_NULL, verbose_name='سایز')
+    glaze = models.ForeignKey(Glaze, null=True, blank=True, on_delete=models.SET_NULL, verbose_name='لعاب')
     grade = models.ForeignKey(Grade, null=True, blank=True, on_delete=models.SET_NULL, verbose_name='درجه')
-    technical_type = models.ForeignKey(TechnicalType, null=True, blank=True, on_delete=models.SET_NULL, verbose_name='نوع فنی')
+    technical_type = models.ForeignKey(TechnicalType, null=True, blank=True, on_delete=models.SET_NULL, verbose_name='نوع فنی (ضخامت)')
     area = models.DecimalField('متراژ', max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
     notes = models.CharField('یادداشت', max_length=200, blank=True)
     status = models.CharField('وضعیت', max_length=20, choices=[('pending','در انتظار'),('error','خطا'),('ok','تأیید شده')], default='pending')
@@ -147,17 +151,5 @@ class ProductionImportRow(models.Model):
 
     def __str__(self):
         return f"Row {self.excel_row} (Batch {self.batch.pk})"
-
-
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-
-@receiver(post_save, sender=settings.AUTH_USER_MODEL)
-def ensure_user_profile(sender, instance, created, **kwargs):
-    if created:
-        Profile.objects.get_or_create(
-            user=instance,
-            defaults={'role': 'admin' if instance.is_superuser else 'viewer'}
-        )
 
 

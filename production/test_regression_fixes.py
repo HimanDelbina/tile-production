@@ -12,7 +12,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.exceptions import ValidationError
 
 from production.models import (
-    Factory, Size, Grade, TechnicalType, Profile,
+    Factory, Size, Grade, TechnicalType, Glaze, Profile,
     Production, Audit, ProductionImportBatch, ProductionImportRow
 )
 from production.importing.parser import parse_description
@@ -32,7 +32,8 @@ class RegressionTests(TestCase):
 
         cls.size = Size.objects.create(width=60, length=120, active=True)
         cls.grade1 = Grade.objects.create(name='درجه 1', rank=1, color='#159b9a', active=True)
-        cls.tech = TechnicalType.objects.create(name='پرسلان نانو پولیش 10MIL')
+        cls.tech = TechnicalType.objects.create(name='10MIL')
+        cls.glaze = Glaze.objects.create(name='پولیش')
 
         cls.entry_user = get_user_model().objects.create_user('entry_reg', password='Pass-12345-Entry!')
         p_entry = Profile.objects.create(user=cls.entry_user, role='entry')
@@ -220,6 +221,7 @@ class RegressionTests(TestCase):
             'action': 'save_rows',
             f'r_{row.pk}-row_id': row.pk,
             f'r_{row.pk}-size': self.size.pk,
+            f'r_{row.pk}-glaze': self.glaze.pk,
             f'r_{row.pk}-grade': self.grade1.pk,
             f'r_{row.pk}-technical_type': self.tech.pk,
             f'r_{row.pk}-area': '99.00',

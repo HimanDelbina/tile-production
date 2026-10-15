@@ -12,7 +12,7 @@ from django.urls import reverse
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from production.models import (
-    Factory, Size, Grade, TechnicalType, Profile,
+    Factory, Size, Grade, TechnicalType, Glaze, Profile,
     Production, Audit, ProductionImportBatch, ProductionImportRow
 )
 from production.importing.parser import (
@@ -34,7 +34,8 @@ class ParserAndMatchingTests(TestCase):
         res = parse_description(raw)
         self.assertEqual(res['size'], (60, 120))
         self.assertEqual(res['grade_code'], '1')
-        self.assertEqual(res['technical_type_name'], 'پرسلان نانو پولیش 10MIL')
+        self.assertEqual(res['technical_type_name'], '10MIL')
+        self.assertEqual(res['glaze_name'], 'پولیش')
         self.assertEqual(res['piece_area'], D('2.16'))
         
         # Test evaluation with quantity and area
@@ -48,7 +49,8 @@ class ParserAndMatchingTests(TestCase):
         res = parse_description(raw)
         self.assertEqual(res['size'], (60, 120))
         self.assertEqual(res['grade_code'], 'UNGRADE')
-        self.assertEqual(res['technical_type_name'], 'پرسلان نانو پولیش 10MIL')
+        self.assertEqual(res['technical_type_name'], '10MIL')
+        self.assertEqual(res['glaze_name'], 'پولیش')
 
     def test_sample_c_extraction(self):
         """Case C: پرسلان نانو پوليش 10MIL مساحت 2.16  YT 805مهتاب 60*120 درجه1 (805 not mistaken for size)"""
@@ -56,7 +58,8 @@ class ParserAndMatchingTests(TestCase):
         res = parse_description(raw)
         self.assertEqual(res['size'], (60, 120))
         self.assertEqual(res['grade_code'], '1')
-        self.assertEqual(res['technical_type_name'], 'پرسلان نانو پولیش 10MIL')
+        self.assertEqual(res['technical_type_name'], '10MIL')
+        self.assertEqual(res['glaze_name'], 'پولیش')
 
     def test_sample_d_extraction(self):
         """Case D: 12MIL نانوپوليش مساحت 2کارولين وايت زئوس 100*100 CH درجه6"""
@@ -64,10 +67,9 @@ class ParserAndMatchingTests(TestCase):
         res = parse_description(raw)
         self.assertEqual(res['size'], (100, 100))
         self.assertEqual(res['grade_code'], '6')
-        self.assertEqual(res['technical_type_name'], 'نانو پولیش 12MIL')
+        self.assertEqual(res['technical_type_name'], '12MIL')
+        self.assertEqual(res['glaze_name'], 'پولیش')
         self.assertEqual(res['piece_area'], D('2'))
-        # Must not guess 'پرسلان'
-        self.assertNotIn('پرسلان', res['technical_type_name'])
 
     def test_all_14_rows_from_attached_excel(self):
         file_path = os.path.join(os.path.dirname(__file__), 'fixtures', 'اکسل.xlsx')
@@ -82,7 +84,8 @@ class ParserAndMatchingTests(TestCase):
         for idx, r in enumerate(rows[:10], start=2):
             parsed = parse_description(r['raw_description'])
             self.assertEqual(parsed['size'], (60, 120), f"Row {idx} size mismatch")
-            self.assertEqual(parsed['technical_type_name'], 'پرسلان نانو پولیش 10MIL', f"Row {idx} tech mismatch")
+            self.assertEqual(parsed['technical_type_name'], '10MIL', f"Row {idx} tech mismatch")
+            self.assertEqual(parsed['glaze_name'], 'پولیش', f"Row {idx} glaze mismatch")
             self.assertEqual(parsed['piece_area'], D('2.16'))
             # Check quantity * piece_area == area
             self.assertEqual(r['quantity'] * parsed['piece_area'], r['area'])
@@ -90,37 +93,70 @@ class ParserAndMatchingTests(TestCase):
         for idx, r in enumerate(rows[10:], start=12):
             parsed = parse_description(r['raw_description'])
             self.assertEqual(parsed['size'], (100, 100), f"Row {idx} size mismatch")
-            self.assertEqual(parsed['technical_type_name'], 'نانو پولیش 12MIL', f"Row {idx} tech mismatch")
+            self.assertEqual(parsed['technical_type_name'], '12MIL', f"Row {idx} tech mismatch")
+            self.assertEqual(parsed['glaze_name'], 'پولیش', f"Row {idx} glaze mismatch")
             self.assertEqual(parsed['piece_area'], D('2'))
             self.assertEqual(r['quantity'] * parsed['piece_area'], r['area'])
 
+    def test_sadaf_excel_patterns(self):
+        """Test extraction from صدف.xlsx patterns with 40*120 and 60*60."""
+        raw1 = "سراميك Dپرسلان آريوتيره ويژه براق 11MIL SERANOVA (2.4) 40*120درجه 1CH"
+        res1 = parse_description(raw1)
+        self.assertEqual(res1['size'], (40, 120))
+        self.assertEqual(res1['grade_code'], '1')
+        self.assertEqual(res1['technical_type_name'], '11MIL')
+        self.assertEqual(res1['glaze_name'], 'براق')
+        self.assertEqual(res1['piece_area'], D('2.4'))
+
+        raw2 = "سراميك پرسلان ليدو مات 13MIL SERANOVA (1.44) 60*60درجه 1CH"
+        res2 = parse_description(raw2)
+        self.assertEqual(res2['size'], (60, 60))
+        self.assertEqual(res2['grade_code'], '1')
+        self.assertEqual(res2['technical_type_name'], '13MIL')
+        self.assertEqual(res2['glaze_name'], 'مات')
+        self.assertEqual(res2['piece_area'], D('1.44'))
+
+    def test_various_size_formats(self):
+        """Test extracting sizes with various separators and concatenated formats."""
+        self.assertEqual(parse_description("سرامیک 60120 پولیش")['size'], (60, 120))
+        self.assertEqual(parse_description("سرامیک 40120 براق")['size'], (40, 120))
+        self.assertEqual(parse_description("سرامیک 100100 مات")['size'], (100, 100))
+        self.assertEqual(parse_description("سرامیک 60-120 پولیش")['size'], (60, 120))
+        self.assertEqual(parse_description("سرامیک 60 در 120 پولیش")['size'], (60, 120))
+        self.assertEqual(parse_description("سرامیک 60/120 پولیش")['size'], (60, 120))
+
     def test_independent_extraction_empty_db(self):
-        """Test that parser extracts values even when database tables (Size, Grade, TechType) are empty."""
+        """Test that parser extracts values even when database tables (Size, Grade, TechType, Glaze) are empty."""
         Size.objects.all().delete()
         Grade.objects.all().delete()
         TechnicalType.objects.all().delete()
+        Glaze.objects.all().delete()
         
         raw = "پرسلان نانو پوليش 10MIL مساحت 2.16 صاحارا 60*120 درجه1"
         res = parse_description(raw)
         self.assertEqual(res['size'], (60, 120))
         self.assertEqual(res['grade_code'], '1')
-        self.assertEqual(res['technical_type_name'], 'پرسلان نانو پولیش 10MIL')
+        self.assertEqual(res['technical_type_name'], '10MIL')
+        self.assertEqual(res['glaze_name'], 'پولیش')
         
         # When evaluating against empty DB, distinct messages must be generated
         eval_res = match_and_evaluate_row(res, quantity=D(10), area=D('21.6'))
         self.assertIsNone(eval_res['size'])
         self.assertIsNone(eval_res['grade'])
         self.assertIsNone(eval_res['technical_type'])
+        self.assertIsNone(eval_res['glaze'])
         self.assertEqual(eval_res['status'], 'error')
         self.assertIn("سایز ۶۰×۱۲۰ استخراج شد، اما در اطلاعات پایه تعریف نشده است", eval_res['error_message'])
         self.assertIn("درجه ۱ استخراج شد، اما گزینه متناظر تعریف نشده است", eval_res['error_message'])
-        self.assertIn("نوع فنی «پرسلان نانو پولیش 10MIL»", eval_res['error_message'])
+        self.assertIn("ضخامت «10MIL»", eval_res['error_message'])
+        self.assertIn("لعاب «پولیش»", eval_res['error_message'])
 
     def test_matching_after_creating_base_data(self):
         """Test matching after creating base data records."""
         Size.objects.all().delete()
         Grade.objects.all().delete()
         TechnicalType.objects.all().delete()
+        Glaze.objects.all().delete()
 
         raw = "پرسلان نانو پوليش 10MIL مساحت 2.16 صاحارا 60*120 درجه1"
         res = parse_description(raw)
@@ -130,13 +166,15 @@ class ParserAndMatchingTests(TestCase):
         # Create base records
         s = Size.objects.create(width=60, length=120, active=True)
         g = Grade.objects.create(name='درجه 1', rank=1, color='#159b9a', active=True)
-        tt = TechnicalType.objects.create(name='پرسلان نانو پولیش 10MIL')
+        tt = TechnicalType.objects.create(name='10MIL')
+        gz = Glaze.objects.create(name='پولیش')
 
         eval_after = match_and_evaluate_row(res, quantity=D(10), area=D('21.6'))
         self.assertTrue(eval_after['is_ok'])
         self.assertEqual(eval_after['size'], s)
         self.assertEqual(eval_after['grade'], g)
         self.assertEqual(eval_after['technical_type'], tt)
+        self.assertEqual(eval_after['glaze'], gz)
 
     def test_ungrade_and_grade_6_with_arbitrary_ranks(self):
         """Ensure grade matching uses names, not rank or id."""
@@ -277,8 +315,9 @@ class ImportWorkflowIntegrationTests(TestCase):
         # Because Size 60x120 and 100x100 are not in DB, missing items should be listed
         self.assertContains(preview_res, "60×120")
         self.assertContains(preview_res, "100×100")
-        self.assertContains(preview_res, "پرسلان نانو پولیش 10MIL")
-        self.assertContains(preview_res, "نانو پولیش 12MIL")
+        self.assertContains(preview_res, "10MIL")
+        self.assertContains(preview_res, "12MIL")
+        self.assertContains(preview_res, "پولیش")
 
     def test_admin_create_missing_base_data_and_auto_rematch(self):
         """Admin can submit 'create_missing_base' and preview immediately updates to ok."""
@@ -299,19 +338,22 @@ class ImportWorkflowIntegrationTests(TestCase):
         res = self.client.post(reverse('import_preview', args=[batch.token]), {
             'action': 'create_missing_base',
             'sizes': ['60×120'],
-            'tech_types': ['پرسلان نانو پولیش 10MIL'],
+            'tech_types': ['10MIL'],
+            'glazes': ['پولیش'],
         })
         self.assertEqual(res.status_code, 302)
 
         # Verify base records created
         self.assertTrue(Size.objects.filter(width=60, length=120).exists())
-        self.assertTrue(TechnicalType.objects.filter(name='پرسلان نانو پولیش 10MIL').exists())
+        self.assertTrue(TechnicalType.objects.filter(name='10MIL').exists())
+        self.assertTrue(Glaze.objects.filter(name='پولیش').exists())
 
         # Verify row is now OK!
         row.refresh_from_db()
         self.assertEqual(row.status, 'ok')
         self.assertEqual(row.size.width, 60)
-        self.assertEqual(row.technical_type.name, 'پرسلان نانو پولیش 10MIL')
+        self.assertEqual(row.technical_type.name, '10MIL')
+        self.assertEqual(row.glaze.name, 'پولیش')
 
     def test_non_admin_cannot_create_base_data(self):
         """Regular entry user cannot trigger create_missing_base."""
@@ -329,7 +371,8 @@ class ImportWorkflowIntegrationTests(TestCase):
         res = self.client.post(reverse('import_preview', args=[batch.token]), {
             'action': 'create_missing_base',
             'sizes': ['60×120'],
-            'tech_types': ['پرسلان نانو پولیش 10MIL'],
+            'tech_types': ['10MIL'],
+            'glazes': ['پولیش'],
         })
         self.assertEqual(res.status_code, 403)
 
@@ -338,7 +381,8 @@ class ImportWorkflowIntegrationTests(TestCase):
         self.client.force_login(self.admin)
         Size.objects.create(width=60, length=120, active=True)
         s_custom = Size.objects.create(width=80, length=80, active=True)
-        TechnicalType.objects.create(name='پرسلان نانو پولیش 10MIL')
+        TechnicalType.objects.create(name='10MIL')
+        Glaze.objects.create(name='پولیش')
 
         excel_file = self.create_excel_file([
             ["پرسلان نانو پوليش 10MIL مساحت 2.16 صاحارا 60*120 درجه1", 10, 21.6],
@@ -406,7 +450,8 @@ class ImportWorkflowIntegrationTests(TestCase):
         """Confirmed batch creates Production and Audit, links rows, and prevents double confirmation."""
         self.client.force_login(self.admin)
         s = Size.objects.create(width=60, length=120, active=True)
-        tt = TechnicalType.objects.create(name='پرسلان نانو پولیش 10MIL')
+        tt = TechnicalType.objects.create(name='10MIL')
+        gz = Glaze.objects.create(name='پولیش')
 
         batch = ProductionImportBatch.objects.create(
             factory=self.factory1,
@@ -420,6 +465,7 @@ class ImportWorkflowIntegrationTests(TestCase):
             raw_description="ردیف تأیید شده",
             size=s,
             grade=self.g1,
+            glaze=gz,
             technical_type=tt,
             area=D('100.00'),
             status='ok',
@@ -436,6 +482,8 @@ class ImportWorkflowIntegrationTests(TestCase):
         row.refresh_from_db()
         self.assertIsNotNone(row.production)
         self.assertEqual(row.production.area, D('100.00'))
+        self.assertEqual(row.production.glaze, gz)
+        self.assertEqual(row.production.technical_type, tt)
         self.assertEqual(Audit.objects.filter(production=row.production, action='create').count(), 1)
 
         # Attempt replay: second confirmation on already-confirmed batch
@@ -443,6 +491,59 @@ class ImportWorkflowIntegrationTests(TestCase):
         res2 = self.client.post(reverse('import_confirm', args=[batch.token]))
         self.assertEqual(res2.status_code, 302)
         self.assertEqual(Production.objects.count(), prod_count)  # No duplicate created!
+
+    def test_custom_thickness_and_glaze_flow(self):
+        """User can manually type a custom thickness and pick glaze, which gets auto-created and saved."""
+        self.client.force_login(self.admin)
+        s = Size.objects.create(width=60, length=120, active=True)
+        gz_matte = Glaze.objects.create(name='مات')
+
+        batch = ProductionImportBatch.objects.create(
+            factory=self.factory1,
+            date=date(2026, 9, 9),
+            uploaded_by=self.admin,
+            status='pending',
+        )
+        row = ProductionImportRow.objects.create(
+            batch=batch,
+            excel_row=2,
+            raw_description="طرح بدون ضخامت 60*120 درجه1",
+            size=s,
+            grade=self.g1,
+            area=D('150.00'),
+            status='error',
+            error_message='ضخامت یافت نشد',
+        )
+
+        # Post save_rows with custom thickness '11.5MIL' and glaze 'مات'
+        res = self.client.post(reverse('import_preview', args=[batch.token]), {
+            'action': 'save_rows',
+            f'r_{row.pk}-row_id': row.pk,
+            f'r_{row.pk}-size': s.pk,
+            f'r_{row.pk}-grade': self.g1.pk,
+            f'r_{row.pk}-glaze': gz_matte.pk,
+            f'r_{row.pk}-custom_thickness': '11.5MIL',
+            f'r_{row.pk}-area': '150.00',
+        })
+        self.assertEqual(res.status_code, 302)
+
+        # Check TechnicalType was auto-created
+        created_tt = TechnicalType.objects.filter(name='11.5MIL').first()
+        self.assertIsNotNone(created_tt)
+
+        row.refresh_from_db()
+        self.assertEqual(row.status, 'ok')
+        self.assertEqual(row.technical_type, created_tt)
+        self.assertEqual(row.glaze, gz_matte)
+
+        # Now confirm batch
+        confirm_res = self.client.post(reverse('import_confirm', args=[batch.token]))
+        self.assertEqual(confirm_res.status_code, 302)
+
+        prod = Production.objects.filter(factory=self.factory1).first()
+        self.assertIsNotNone(prod)
+        self.assertEqual(prod.technical_type, created_tt)
+        self.assertEqual(prod.glaze, gz_matte)
 
     def test_unauthorized_factory_batch_access_prevented(self):
         """Entry user assigned to Factory 1 cannot view or confirm batch for Factory 2."""

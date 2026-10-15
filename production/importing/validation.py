@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Optional, Dict, Any, List, Tuple
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from ..models import Size, Grade, TechnicalType
+from ..models import Size, Grade, Glaze, TechnicalType
 
 MAX_UPLOAD_SIZE = getattr(settings, 'DJANGO_MAX_UPLOAD_SIZE', 10 * 1024 * 1024)
 MAX_IMPORT_ROWS = getattr(settings, 'DJANGO_MAX_IMPORT_ROWS', 2000)
@@ -31,11 +31,13 @@ def validate_import_row(
     quantity: Optional[Decimal] = None,
     area: Optional[Decimal] = None,
     size_obj: Optional[Size] = None,
+    glaze_obj: Optional[Glaze] = None,
     grade_obj: Optional[Grade] = None,
     tech_obj: Optional[TechnicalType] = None,
     source_errors: Optional[List[Dict[str, str]]] = None,
     is_reversed_size: bool = False,
     size_msg: Optional[str] = None,
+    glaze_msg: Optional[str] = None,
     grade_msg: Optional[str] = None,
     tech_msg: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -109,12 +111,18 @@ def validate_import_row(
     elif not grade_obj.active:
         errors.append(f"درجه {grade_obj} غیرفعال است.")
 
-    # 6. Validate Technical Type
+    # 6. Validate Glaze
+    if glaze_obj and not glaze_obj.active:
+        errors.append(f"لعاب {glaze_obj} غیرفعال است.")
+    elif glaze_msg:
+        errors.append(glaze_msg)
+
+    # 7. Validate Technical Type (Thickness)
     tech_name = parsed_data.get('technical_type_name')
     if tech_name and not tech_obj:
-        errors.append(tech_msg or f"نوع فنی «{tech_name}» در اطلاعات پایه تعیین یا انتخاب نشده است.")
+        errors.append(tech_msg or f"ضخامت «{tech_name}» در اطلاعات پایه تعیین یا انتخاب نشده است.")
 
-    # 7. Consistency Check: quantity * piece_area (ضریب مساحت واحد تولید) vs area
+    # 8. Consistency Check: quantity * piece_area (ضریب مساحت واحد تولید) vs area
     piece_area = parsed_data.get('piece_area')
     if clean_quantity is not None and piece_area is not None and clean_area is not None:
         try:
@@ -143,6 +151,7 @@ def validate_import_row(
         "quantity": clean_quantity,
         "size": size_obj,
         "is_reversed_size": is_reversed_size,
+        "glaze": glaze_obj,
         "grade": grade_obj,
         "technical_type": tech_obj,
         "source_errors": active_source_errors,

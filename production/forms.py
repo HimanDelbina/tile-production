@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db.models import Q
-from .models import Factory, Size, Grade, Production, Profile, TechnicalType
+from .models import Factory, Size, Grade, Glaze, Production, Profile, TechnicalType
 from .permissions import factories_for, can_write
 from .dates import normalize,parse_jalali,jalali
 
@@ -24,8 +24,16 @@ class ProductionForm(forms.ModelForm):
     area=DecimalInput(label='متراژ (مترمربع)',max_digits=14,decimal_places=2,min_value=Decimal('.01'),widget=forms.TextInput(attrs={'inputmode':'decimal','class':'area-input','placeholder':'۰٫۰۰'}))
     class Meta:
         model=Production
-        fields=['size','grade','area','notes']
+        fields=['size','glaze','grade','area','notes']
         widgets={'notes':forms.TextInput(attrs={'placeholder':'اختیاری'})}
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.fields['glaze'].required = False
+        self.fields['glaze'].empty_label = '— انتخاب لعاب —'
+        if self.instance and self.instance.pk and self.instance.glaze_id:
+            self.fields['glaze'].queryset = Glaze.objects.filter(Q(active=True)|Q(pk=self.instance.glaze_id))
+        else:
+            self.fields['glaze'].queryset = Glaze.objects.filter(active=True)
 
 class BatchHeader(forms.Form):
     factory=forms.ModelChoiceField(label='کارخانه',queryset=Factory.objects.none())
@@ -38,12 +46,13 @@ class BatchHeader(forms.Form):
 
 RowSet=forms.formset_factory(ProductionForm,extra=0,can_delete=True,max_num=100,validate_max=True,min_num=1,validate_min=True)
 
-GROUPS=[('detail','ریز تولیدات'),('day','خلاصه روزانه'),('month','خلاصه ماهانه شمسی'),('year','خلاصه سالانه شمسی'),('factory','مقایسه کارخانه‌ها'),('size','خلاصه سایزها'),('grade','خلاصه درجات'),('type','نوع کاشی: سایز + درجه'),('matrix','ماتریس درجات')]
+GROUPS=[('detail','ریز تولیدات'),('day','خلاصه روزانه'),('month','خلاصه ماهانه شمسی'),('year','خلاصه سالانه شمسی'),('factory','مقایسه کارخانه‌ها'),('size','خلاصه سایزها'),('glaze','خلاصه لعاب‌ها'),('size_glaze','سایز + لعاب'),('grade','خلاصه درجات'),('type','نوع کاشی: سایز + درجه'),('matrix','ماتریس درجات')]
 class FilterForm(forms.Form):
     start=JalaliField(label='از تاریخ',required=False)
     end=JalaliField(label='تا تاریخ',required=False)
     factory=forms.ModelMultipleChoiceField(label='کارخانه‌ها',queryset=Factory.objects.none(),required=False)
     size=forms.ModelMultipleChoiceField(label='سایزها',queryset=Size.objects.all(),required=False)
+    glaze=forms.ModelMultipleChoiceField(label='لعاب‌ها',queryset=Glaze.objects.all(),required=False)
     grade=forms.ModelMultipleChoiceField(label='درجات',queryset=Grade.objects.all(),required=False)
     minimum=DecimalInput(label='حداقل متراژ ردیف',required=False,max_digits=14,decimal_places=2,min_value=0)
     maximum=DecimalInput(label='حداکثر متراژ ردیف',required=False,max_digits=14,decimal_places=2,min_value=0)
@@ -57,7 +66,7 @@ class FilterForm(forms.Form):
         super().__init__(*args,**kwargs)
         self.fields['factory'].queryset=factories_for(user)
         self.fields['author'].queryset=get_user_model().objects.filter(productions__factory__in=factories_for(user)).distinct()
-        for name in ('factory','size','grade','author'):
+        for name in ('factory','size','glaze','grade','author'):
             self.fields[name].widget.attrs['class']='searchable'
     def clean(self):
         d=super().clean()
@@ -70,13 +79,17 @@ class ManagementFilterForm(forms.Form):
     end = JalaliField(label='تا تاریخ', required=False)
     factory = forms.ModelMultipleChoiceField(label='کارخانه‌ها', queryset=Factory.objects.none(), required=False)
     size = forms.ModelMultipleChoiceField(label='سایزها', queryset=Size.objects.none(), required=False)
+    glaze = forms.ModelMultipleChoiceField(label='لعاب‌ها', queryset=Glaze.objects.none(), required=False)
+    technical_type = forms.ModelMultipleChoiceField(label='ضخامت / نوع فنی', queryset=TechnicalType.objects.none(), required=False)
 
     def __init__(self, *args, user, **kwargs):
         super().__init__(*args, **kwargs)
         self.user = user
         self.fields['factory'].queryset = factories_for(user)
         self.fields['size'].queryset = Size.objects.all()
-        for name in ('factory', 'size'):
+        self.fields['glaze'].queryset = Glaze.objects.all()
+        self.fields['technical_type'].queryset = TechnicalType.objects.all()
+        for name in ('factory', 'size', 'glaze', 'technical_type'):
             self.fields[name].widget.attrs['class'] = 'searchable'
 
     def clean(self):
@@ -134,20 +147,32 @@ class ImportRowEditForm(forms.Form):
         queryset=Size.objects.filter(active=True),
         required=True,
         error_messages={'required': 'انتخاب سایز الزامی است.'},
-        widget=forms.Select(attrs={'style': 'width: 100%; min-width: 110px; font-size: 0.85rem; padding: 4px;'})
+        widget=forms.Select(attrs={'style': 'width: 100%; min-width: 100px; font-size: 0.85rem; padding: 4px;'})
+    )
+    glaze = forms.ModelChoiceField(
+        label='نوع لعاب',
+        queryset=Glaze.objects.filter(active=True),
+        required=False,
+        widget=forms.Select(attrs={'style': 'width: 100%; min-width: 90px; font-size: 0.85rem; padding: 4px;'})
     )
     grade = forms.ModelChoiceField(
         label='درجه',
         queryset=Grade.objects.filter(active=True),
         required=True,
         error_messages={'required': 'انتخاب درجه الزامی است.'},
-        widget=forms.Select(attrs={'style': 'width: 100%; min-width: 95px; font-size: 0.85rem; padding: 4px;'})
+        widget=forms.Select(attrs={'style': 'width: 100%; min-width: 90px; font-size: 0.85rem; padding: 4px;'})
     )
     technical_type = forms.ModelChoiceField(
-        label='نوع فنی',
+        label='نوع فنی (ضخامت)',
         queryset=TechnicalType.objects.all(),
         required=False,
-        widget=forms.Select(attrs={'style': 'width: 100%; min-width: 130px; font-size: 0.85rem; padding: 4px;'})
+        widget=forms.Select(attrs={'style': 'width: 100%; min-width: 100px; font-size: 0.85rem; padding: 4px;'})
+    )
+    custom_thickness = forms.CharField(
+        label='ورود دستی ضخامت',
+        required=False,
+        max_length=50,
+        widget=forms.TextInput(attrs={'placeholder': 'یا ضخامت جدید...', 'style': 'width: 100%; min-width: 90px; font-size: 0.78rem; padding: 3px; margin-top: 3px;'})
     )
     area = forms.DecimalField(
         label='متراژ',

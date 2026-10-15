@@ -145,13 +145,13 @@
     <div class="brief-section-head brief-total-heading"><h2 id="brief-total-title">جمع کل بازه · همهٔ روزها و کارخانه‌های انتخاب‌شده</h2></div>
     <div class="table-scroll" tabindex="0" role="region" aria-label="جمع تولید کارخانه‌های انتخاب‌شده">
       <table>
-        <thead><tr><th scope="col">کارخانه</th><th scope="col">کل متراژ</th>{% for grade in report.grades %}<th scope="col"><span class="brief-dot" style="background:{{ grade.color }}"></span>{{ grade.name|fa }}</th>{% endfor %}</tr></thead>
+        <thead><tr><th scope="col">سایز</th><th scope="col">کل متراژ</th>{% for grade in report.grades %}<th scope="col"><span class="brief-dot" style="background:{{ grade.color }}"></span>{{ grade.name|fa }}</th>{% endfor %}</tr></thead>
         <tbody>
-          {% for factory in report.factory_tables %}
-          <tr>
-            <th scope="row">{% if not demo %}<a href="{{ factory.footer.url }}">{% endif %}{{ factory.name }}{% if not demo %}</a>{% endif %}</th>
-            <td><strong>{{ factory.total_area|rounded_num }}</strong></td>
-            {% for cell in factory.footer.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}
+          {% for row in report.aggregated_table.rows %}
+          <tr class="brief-size">
+            <td>{% if not demo %}<a href="{{ row.url }}">{% endif %}{{ row.size_label|fa }}{% if not demo %}</a>{% endif %}</td>
+            <td>{{ row.total_area|rounded_num }}</td>
+            {% for cell in row.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}
           </tr>
           {% endfor %}
         </tbody>

@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from production.models import (
-    Factory, Size, Grade, Profile, Production,
+    Factory, Size, Grade, Glaze, TechnicalType, Profile, Production,
     ProductionImportBatch, ProductionImportRow
 )
 from production.dates import parse_jalali, jalali, period
@@ -491,3 +491,228 @@ class ManagementReportTests(TestCase):
 
         for item in ['desktop-table-view', 'mgmt-mobile-cards', 'mgmt-m-card', 'mgmt-m-grades-grid', 'mgmt-m-footer-card']:
             self.assertIn(item, content)
+
+    def test_glaze_breakdown_under_size_in_management_report(self):
+        """
+        Verify that sizes are broken down by glaze (e.g. 60x120 broken down into
+        polish, matte, glossy) with their respective area, percentage of size,
+        and grade breakdown in management report data and HTML views.
+        """
+        polish = Glaze.objects.create(name='پولیش')
+        matte = Glaze.objects.create(name='مات')
+        glossy = Glaze.objects.create(name='براق')
+
+        d = self.test_date + timedelta(days=1)
+        Production.objects.create(
+            factory=self.factory_a, size=self.size_60_120, glaze=polish,
+            grade=self.grade_1, area=D('5000.00'), date=d, created_by=self.admin
+        )
+        Production.objects.create(
+            factory=self.factory_a, size=self.size_60_120, glaze=polish,
+            grade=self.grade_2, area=D('1000.00'), date=d, created_by=self.admin
+        )
+        Production.objects.create(
+            factory=self.factory_a, size=self.size_60_120, glaze=matte,
+            grade=self.grade_1, area=D('3000.00'), date=d, created_by=self.admin
+        )
+        Production.objects.create(
+            factory=self.factory_a, size=self.size_60_120, glaze=matte,
+            grade=self.grade_2, area=D('1000.00'), date=d, created_by=self.admin
+        )
+        Production.objects.create(
+            factory=self.factory_a, size=self.size_60_120, glaze=glossy,
+            grade=self.grade_1, area=D('2000.00'), date=d, created_by=self.admin
+        )
+
+        cleaned_data = {
+            'start': d,
+            'end': d,
+            'factory': [self.factory_a],
+        }
+        report_data = get_management_report_data(
+            user=self.admin,
+            cleaned_data=cleaned_data,
+            query_params={},
+        )
+        self.assertIsNotNone(report_data)
+        factory_table = report_data['factory_tables'][0]
+        self.assertEqual(len(factory_table['rows']), 1)
+        size_row = factory_table['rows'][0]
+        self.assertEqual(size_row['size'], self.size_60_120)
+        self.assertEqual(size_row['total_area'], D('12000.00'))
+
+        glazes = size_row['glazes']
+        self.assertEqual(len(glazes), 3)
+
+        glaze_polish = next(g for g in glazes if g['glaze'] == polish)
+        self.assertEqual(glaze_polish['total_area'], D('6000.00'))
+        self.assertAlmostEqual(float(glaze_polish['share_of_size']), 50.0, places=1)
+        g1_polish = next(c for c in glaze_polish['grades'] if c['grade'] == self.grade_1)
+        g2_polish = next(c for c in glaze_polish['grades'] if c['grade'] == self.grade_2)
+        self.assertEqual(g1_polish['area'], D('5000.00'))
+        self.assertEqual(g2_polish['area'], D('1000.00'))
+
+        glaze_matte = next(g for g in glazes if g['glaze'] == matte)
+        self.assertEqual(glaze_matte['total_area'], D('4000.00'))
+        self.assertAlmostEqual(float(glaze_matte['share_of_size']), 33.3, places=1)
+        g1_matte = next(c for c in glaze_matte['grades'] if c['grade'] == self.grade_1)
+        g2_matte = next(c for c in glaze_matte['grades'] if c['grade'] == self.grade_2)
+        self.assertEqual(g1_matte['area'], D('3000.00'))
+        self.assertEqual(g2_matte['area'], D('1000.00'))
+
+        glaze_glossy = next(g for g in glazes if g['glaze'] == glossy)
+        self.assertEqual(glaze_glossy['total_area'], D('2000.00'))
+        self.assertAlmostEqual(float(glaze_glossy['share_of_size']), 16.7, places=1)
+        g1_glossy = next(c for c in glaze_glossy['grades'] if c['grade'] == self.grade_1)
+        g2_glossy = next(c for c in glaze_glossy['grades'] if c['grade'] == self.grade_2)
+        self.assertEqual(g1_glossy['area'], D('2000.00'))
+        self.assertEqual(g2_glossy['area'], D('0'))
+
+        params = {'start': jalali(d), 'end': jalali(d), 'factory': self.factory_a.pk}
+        response = self.client.get('/management-preview/', params)
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+        self.assertIn('mgmt-glaze-subrow', content)
+        self.assertIn('پولیش', content)
+        self.assertIn('مات', content)
+        self.assertIn('براق', content)
+        self.assertIn('۵۰٫۰۰٪', content)
+        self.assertIn('۳۳٫۳۳٪', content)
+        self.assertIn('۱۶٫۶۷٪', content)
+
+        params_filter = {'start': jalali(d), 'end': jalali(d), 'factory': self.factory_a.pk, 'glaze': polish.pk}
+        response_filter = self.client.get('/management-preview/', params_filter)
+        self.assertEqual(response_filter.status_code, 200)
+        report_filtered = response_filter.context['report']
+        self.assertEqual(report_filtered['summary_cards']['total_area'], D('6000.00'))
+
+    def test_product_combination_rows_and_independent_grade_percentages(self):
+        """
+        Tests the requirement for 'تولید در یک نگاه':
+        1. Each row represents a unique combination of Factory + Size + Glaze + Thickness.
+        2. Grade percentages are calculated independently for each row.
+        3. Factory totals sum all product rows without double counting.
+        4. Grand total combines matching product combinations across factories.
+        5. Visual identity on 'تولید در یک نگاه' (/) is preserved.
+        """
+        polish, _ = Glaze.objects.get_or_create(name='پولیش')
+        matte, _ = Glaze.objects.get_or_create(name='مات')
+        tech_10, _ = TechnicalType.objects.get_or_create(name='10MIL')
+        tech_12, _ = TechnicalType.objects.get_or_create(name='12MIL')
+        size_100_100, _ = Size.objects.get_or_create(width=100, length=100)
+        grade_6, _ = Grade.objects.get_or_create(name='درجه ۶', rank=4, color='#445566')
+
+        test_d = self.test_date + timedelta(days=2)
+
+        # Factory A:
+        # 1) 60x120 Polish 10MIL -> 4000 m² (Grade 1: 2800 (70%), Grade 2: 800 (20%), Ungraded: 400 (10%))
+        Production.objects.create(factory=self.factory_a, size=self.size_60_120, glaze=polish,
+                                  technical_type=tech_10, grade=self.grade_1, area=D('2800.00'),
+                                  date=test_d, created_by=self.admin)
+        Production.objects.create(factory=self.factory_a, size=self.size_60_120, glaze=polish,
+                                  technical_type=tech_10, grade=self.grade_2, area=D('800.00'),
+                                  date=test_d, created_by=self.admin)
+        Production.objects.create(factory=self.factory_a, size=self.size_60_120, glaze=polish,
+                                  technical_type=tech_10, grade=self.grade_ungraded, area=D('400.00'),
+                                  date=test_d, created_by=self.admin)
+
+        # 2) 60x120 Matte 10MIL -> 1000 m² (Grade 1: 900 (90%), Grade 2: 100 (10%))
+        Production.objects.create(factory=self.factory_a, size=self.size_60_120, glaze=matte,
+                                  technical_type=tech_10, grade=self.grade_1, area=D('900.00'),
+                                  date=test_d, created_by=self.admin)
+        Production.objects.create(factory=self.factory_a, size=self.size_60_120, glaze=matte,
+                                  technical_type=tech_10, grade=self.grade_2, area=D('100.00'),
+                                  date=test_d, created_by=self.admin)
+
+        # 3) 100x100 Polish 12MIL -> 2000 m² (Grade 1: 1500 (75%), Grade 6: 500 (25%))
+        Production.objects.create(factory=self.factory_a, size=size_100_100, glaze=polish,
+                                  technical_type=tech_12, grade=self.grade_1, area=D('1500.00'),
+                                  date=test_d, created_by=self.admin)
+        Production.objects.create(factory=self.factory_a, size=size_100_100, glaze=polish,
+                                  technical_type=tech_12, grade=grade_6, area=D('500.00'),
+                                  date=test_d, created_by=self.admin)
+
+        # Factory B:
+        # 1) 60x120 Polish 10MIL -> 2000 m² (Grade 1: 2000 (100%))
+        Production.objects.create(factory=self.factory_b, size=self.size_60_120, glaze=polish,
+                                  technical_type=tech_10, grade=self.grade_1, area=D('2000.00'),
+                                  date=test_d, created_by=self.admin)
+
+        # 2) 100x100 Matte 10MIL -> 1000 m² (Grade 1: 1000 (100%))
+        Production.objects.create(factory=self.factory_b, size=size_100_100, glaze=matte,
+                                  technical_type=tech_10, grade=self.grade_1, area=D('1000.00'),
+                                  date=test_d, created_by=self.admin)
+
+        cleaned_data = {'start': test_d, 'end': test_d}
+        report = get_management_report_data(self.admin, cleaned_data, {}, product_rows=True)
+
+        # Factory A checks:
+        fa_table = next(t for t in report['factory_tables'] if t['name'] == 'کارخانه الف')
+        self.assertEqual(fa_table['total_area'], D('7000.00')) # 4000 + 1000 + 2000
+        fa_rows = {r['size_label']: r for r in fa_table['rows']}
+        self.assertEqual(len(fa_rows), 3)
+
+        # Row 1: 60 × 120 پولیش 10 میل
+        r1 = fa_rows['60 × 120 پولیش 10 میل']
+        self.assertEqual(r1['total_area'], D('4000.00'))
+        r1_g1 = next(c for c in r1['grades'] if c['grade'].pk == self.grade_1.pk)
+        r1_g2 = next(c for c in r1['grades'] if c['grade'].pk == self.grade_2.pk)
+        r1_gu = next(c for c in r1['grades'] if c['grade'].pk == self.grade_ungraded.pk)
+        self.assertEqual(r1_g1['percentage'], D('70.00'))
+        self.assertEqual(r1_g2['percentage'], D('20.00'))
+        self.assertEqual(r1_gu['percentage'], D('10.00'))
+
+        # Row 2: 60 × 120 مات 10 میل
+        r2 = fa_rows['60 × 120 مات 10 میل']
+        self.assertEqual(r2['total_area'], D('1000.00'))
+        r2_g1 = next(c for c in r2['grades'] if c['grade'].pk == self.grade_1.pk)
+        r2_g2 = next(c for c in r2['grades'] if c['grade'].pk == self.grade_2.pk)
+        self.assertEqual(r2_g1['percentage'], D('90.00'))
+        self.assertEqual(r2_g2['percentage'], D('10.00'))
+
+        # Row 3: 100 × 100 پولیش 12 میل
+        r3 = fa_rows['100 × 100 پولیش 12 میل']
+        self.assertEqual(r3['total_area'], D('2000.00'))
+        r3_g1 = next(c for c in r3['grades'] if c['grade'].pk == self.grade_1.pk)
+        r3_g6 = next(c for c in r3['grades'] if c['grade'].pk == grade_6.pk)
+        self.assertEqual(r3_g1['percentage'], D('75.00'))
+        self.assertEqual(r3_g6['percentage'], D('25.00'))
+
+        # Factory B checks:
+        fb_table = next(t for t in report['factory_tables'] if t['name'] == 'کارخانه ب')
+        self.assertEqual(fb_table['total_area'], D('3000.00')) # 2000 + 1000
+        fb_rows = {r['size_label']: r for r in fb_table['rows']}
+        self.assertEqual(len(fb_rows), 2)
+        self.assertIn('60 × 120 پولیش 10 میل', fb_rows)
+        self.assertIn('100 × 100 مات 10 میل', fb_rows)
+
+        # Grand Total / Aggregated Table checks:
+        agg = report['aggregated_table']
+        self.assertEqual(agg['footer']['total_area'], D('10000.00')) # 7000 + 3000
+        agg_rows = {r['size_label']: r for r in agg['rows']}
+        self.assertEqual(len(agg_rows), 4)
+
+        # Combined 60x120 Polish 10MIL: 4000 (A) + 2000 (B) = 6000
+        agg_r1 = agg_rows['60 × 120 پولیش 10 میل']
+        self.assertEqual(agg_r1['total_area'], D('6000.00'))
+        agg_r1_g1 = next(c for c in agg_r1['grades'] if c['grade'].pk == self.grade_1.pk)
+        self.assertEqual(agg_r1_g1['area'], D('4800.00')) # 2800 + 2000
+        self.assertEqual(agg_r1_g1['percentage'], D('80.00')) # 4800 / 6000 = 80%
+
+        # HTTP page render on "تولید در یک نگاه" (/)
+        resp = self.client.get('/', {'start': jalali(test_d), 'end': jalali(test_d)})
+        self.assertEqual(resp.status_code, 200)
+        html = resp.content.decode('utf-8')
+        self.assertIn('تولید در یک نگاه', html)
+        self.assertIn('۶۰ × ۱۲۰ پولیش ۱۰ میل', html)
+        self.assertIn('۶۰ × ۱۲۰ مات ۱۰ میل', html)
+        self.assertIn('۱۰۰ × ۱۰۰ پولیش ۱۲ میل', html)
+        self.assertIn('۱۰۰ × ۱۰۰ مات ۱۰ میل', html)
+        # Check red percentages formatted with |fa and rounded_num
+        self.assertIn('۷۰٪', html)
+        self.assertIn('۹۰٪', html)
+        self.assertIn('۷۵٪', html)
+        self.assertIn('۸۰٪', html)
+        # Check grand total footer
+        self.assertIn('۱۰٬۰۰۰', html)
+
