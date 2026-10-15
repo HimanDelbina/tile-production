@@ -441,11 +441,19 @@ def import_upload(request):
         sheet_name = (form.cleaned_data.get('sheet_name') or '').strip()
         
         # Check if identical file and sheet has already been confirmed for this factory and date
-        if ProductionImportBatch.objects.filter(
+        confirmed_batches = ProductionImportBatch.objects.filter(
             factory=factory, date=date, file_hash=file_hash, sheet_name=sheet_name, status='confirmed'
-        ).exists():
-            form.add_error(None, 'این فایل با این مشخصات برای این کارخانه و تاریخ قبلاً بارگذاری و ثبت نهایی شده است.')
-            return render(request, 'production/import_upload.html', {'form': form})
+        )
+        if confirmed_batches.exists():
+            has_active_productions = Production.objects.filter(
+                import_rows__batch__in=confirmed_batches,
+                deleted_at__isnull=True
+            ).exists()
+            if has_active_productions:
+                form.add_error(None, 'این فایل با این مشخصات برای این کارخانه و تاریخ قبلاً بارگذاری و ثبت نهایی شده است.')
+                return render(request, 'production/import_upload.html', {'form': form})
+            else:
+                confirmed_batches.update(status='superseded')
             
         # Check if an existing pending batch already exists for this exact identity
         existing_pending = ProductionImportBatch.objects.filter(
@@ -875,11 +883,19 @@ def import_confirm(request, token):
                 status='confirmed'
             ).exclude(pk=batch.pk).first()
             if conflict:
-                messages.error(
-                    request,
-                    f'نوبت ورود شماره {conflict.pk} با همین فایل و مشخصات قبلاً برای این کارخانه و تاریخ تأیید و ثبت نهایی شده است. برای جلوگیری از ثبت تکراری، این نوبت لغو گردید.'
-                )
-                return redirect('import_preview', token=batch.token)
+                has_active = Production.objects.filter(
+                    import_rows__batch=conflict,
+                    deleted_at__isnull=True
+                ).exists()
+                if has_active:
+                    messages.error(
+                        request,
+                        f'نوبت ورود شماره {conflict.pk} با همین فایل و مشخصات قبلاً برای این کارخانه و تاریخ تأیید و ثبت نهایی شده است. برای جلوگیری از ثبت تکراری، این نوبت لغو گردید.'
+                    )
+                    return redirect('import_preview', token=batch.token)
+                else:
+                    conflict.status = 'superseded'
+                    conflict.save(update_fields=['status'])
             
         # 6. Re-validate ALL rows with unified validation service
         invalid_rows = []

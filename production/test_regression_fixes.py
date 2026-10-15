@@ -335,3 +335,73 @@ class RegressionTests(TestCase):
         res = self.client.get('/health/')
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json(), {'status': 'ok'})
+
+    def test_reupload_after_production_deletion_is_allowed(self):
+        """
+        When all productions from a previously confirmed batch are deleted,
+        the system must allow re-uploading and confirming the file for the same date and factory.
+        """
+        from production.services import bulk_delete_records
+        self.client.force_login(self.admin)
+
+        excel_rows = [
+            ["پرسلان نانو پولیش 10MIL مساحت 2.16 صاحارا 60*120 درجه1", 100, 216.0],
+        ]
+        excel_content = self.create_excel_file(excel_rows)
+        raw_bytes = excel_content.read()
+
+        # 1. Upload and confirm batch 1
+        file1 = SimpleUploadedFile("prod_reupload.xlsx", raw_bytes, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        upload_res1 = self.client.post(reverse('import_upload'), {
+            'factory': self.factory1.pk,
+            'date': '1405/06/20',
+            'file': file1,
+        })
+        self.assertEqual(upload_res1.status_code, 302)
+        batch1 = ProductionImportBatch.objects.latest('pk')
+
+        confirm_res1 = self.client.post(reverse('import_confirm', args=[batch1.token]))
+        self.assertEqual(confirm_res1.status_code, 302)
+        batch1.refresh_from_db()
+        self.assertEqual(batch1.status, 'confirmed')
+
+        active_prods = Production.objects.filter(import_rows__batch=batch1, deleted_at__isnull=True)
+        self.assertEqual(active_prods.count(), 1)
+
+        # 2. While productions are active, re-upload must be rejected
+        file_dup = SimpleUploadedFile("prod_reupload.xlsx", raw_bytes, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        upload_dup = self.client.post(reverse('import_upload'), {
+            'factory': self.factory1.pk,
+            'date': '1405/06/20',
+            'file': file_dup,
+        })
+        self.assertEqual(upload_dup.status_code, 200)
+        self.assertIn("قبلاً بارگذاری و ثبت نهایی شده است", upload_dup.content.decode('utf-8'))
+
+        # 3. User deletes the production records
+        bulk_delete_records(self.admin, list(active_prods))
+        batch1.refresh_from_db()
+        self.assertEqual(batch1.status, 'superseded')
+        self.assertEqual(Production.objects.filter(import_rows__batch=batch1, deleted_at__isnull=True).count(), 0)
+
+        # 4. Now re-upload must be accepted!
+        file_reupload = SimpleUploadedFile("prod_reupload.xlsx", raw_bytes, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        upload_res2 = self.client.post(reverse('import_upload'), {
+            'factory': self.factory1.pk,
+            'date': '1405/06/20',
+            'file': file_reupload,
+        })
+        self.assertEqual(upload_res2.status_code, 302)
+        batch2 = ProductionImportBatch.objects.latest('pk')
+        self.assertNotEqual(batch1.pk, batch2.pk)
+        self.assertEqual(batch2.status, 'pending')
+
+        # 5. Confirming batch 2 must succeed and create new active production records
+        confirm_res2 = self.client.post(reverse('import_confirm', args=[batch2.token]))
+        self.assertEqual(confirm_res2.status_code, 302)
+        batch2.refresh_from_db()
+        self.assertEqual(batch2.status, 'confirmed')
+
+        new_active = Production.objects.filter(import_rows__batch=batch2, deleted_at__isnull=True)
+        self.assertEqual(new_active.count(), 1)
+

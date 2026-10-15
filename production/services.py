@@ -47,7 +47,21 @@ def change_record(user,pk,data=None,version=None,delete=False):
         obj.full_clean()
     obj.version+=1; obj.save()
     Audit.objects.create(production=obj,actor=user,action='delete' if delete else 'update',before=before,after=obj.snapshot())
+    if delete:
+        sync_batch_status_after_deletion([obj])
     return obj
+
+def sync_batch_status_after_deletion(records):
+    """If all production records created from an import batch are deleted, mark the batch as superseded."""
+    from .models import ProductionImportRow, ProductionImportBatch
+    batch_ids = set(ProductionImportRow.objects.filter(production__in=records).values_list('batch_id', flat=True))
+    for b_id in batch_ids:
+        has_active = Production.objects.filter(
+            import_rows__batch_id=b_id,
+            deleted_at__isnull=True
+        ).exists()
+        if not has_active:
+            ProductionImportBatch.objects.filter(pk=b_id, status='confirmed').update(status='superseded')
 
 @transaction.atomic
 def bulk_delete_records(user, records_or_ids):
@@ -75,5 +89,7 @@ def bulk_delete_records(user, records_or_ids):
             Audit(production=obj, actor=user, action='delete', before=before, after=obj.snapshot())
         )
     Audit.objects.bulk_create(audit_entries)
+    sync_batch_status_after_deletion(records)
     return len(records)
+
 

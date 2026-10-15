@@ -99,7 +99,16 @@ class ProductionImportBatch(models.Model):
     original_file = models.FileField('فایل اکسِل', upload_to='imports/')
     sheet_name = models.CharField('نام شیت', max_length=200, blank=True)
     token = models.UUIDField(default=uuid.uuid4, editable=False, unique=True, verbose_name='توکن')
-    status = models.CharField('وضعیت', max_length=20, choices=[('pending', 'در انتظار بررسی'), ('confirmed', 'ثبت شده')], default='pending')
+    status = models.CharField(
+        'وضعیت',
+        max_length=20,
+        choices=[
+            ('pending', 'در انتظار بررسی'),
+            ('confirmed', 'ثبت شده'),
+            ('superseded', 'جایگزین‌شده/لغوشده'),
+        ],
+        default='pending'
+    )
     confirmed_at = models.DateTimeField('زمان ثبت نهایی', null=True, blank=True)
     confirmed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='confirmed_batches', verbose_name='تأییدکننده')
     file_hash = models.CharField('هش فایل', max_length=64, blank=True)
