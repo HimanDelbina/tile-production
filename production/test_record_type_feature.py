@@ -181,3 +181,182 @@ class RecordTypeFeatureTests(TestCase):
         self.assertEqual(report['summary_cards']['total_area'], Decimal('5000.00'))
         # Inventory takes latest snapshot per item: 2370 + 1000 = 3370 (NOT 2370 + 2370 + 1000 = 5740)
         self.assertEqual(report['summary_cards']['inventory_total_area'], Decimal('3370.00'))
+
+    def test_grade_percentages_exact_user_example(self):
+        """
+        Verify the user's exact inventory example:
+        Total inventory: 2369 m2
+        - Grade A (Grade 1): 1703 m2 -> 71.89%
+        - Ungrade (Grade 2): 539 m2 -> 22.75%
+        - Grade 6 (Grade 3): 127 m2 -> 5.36%
+        Sum of percentages = 100.00%
+
+        Actual production on the same day: 3000 m2
+        - Grade 1: 2000 m2 -> 66.67%
+        - Grade 2: 1000 m2 -> 33.33%
+        - Grade 3: 0 m2 -> 0.00%
+        Sum of percentages = 100.00%
+
+        Both actual production and inventory MUST calculate percentages using strictly
+        their own independent denominators (3000 and 2369 respectively).
+        """
+        grade_3 = Grade.objects.create(name='درجه 6', rank=3, color='#dc2626', active=True)
+        d = date(2026, 10, 19)
+
+        # Actual Production: 3000 m2 total
+        Production.objects.create(
+            factory=self.sadaf, date=d, record_type='production',
+            size=self.size_40_120, grade=self.grade_1, area=Decimal('2000.00'), created_by=self.admin
+        )
+        Production.objects.create(
+            factory=self.sadaf, date=d, record_type='production',
+            size=self.size_40_120, grade=self.grade_2, area=Decimal('1000.00'), created_by=self.admin
+        )
+
+        # Inventory: 2369 m2 total
+        Production.objects.create(
+            factory=self.sadaf, date=d, record_type='inventory',
+            size=self.size_30_100, grade=self.grade_1, area=Decimal('1703.00'), created_by=self.admin
+        )
+        Production.objects.create(
+            factory=self.sadaf, date=d, record_type='inventory',
+            size=self.size_30_100, grade=self.grade_2, area=Decimal('539.00'), created_by=self.admin
+        )
+        Production.objects.create(
+            factory=self.sadaf, date=d, record_type='inventory',
+            size=self.size_30_100, grade=grade_3, area=Decimal('127.00'), created_by=self.admin
+        )
+
+        cleaned_data = {'start': d, 'end': d, 'factory': [self.sadaf]}
+        report = get_management_report_data(self.admin, cleaned_data, {}, include_days=True)
+
+        # Overall summaries
+        summary = report['summary_cards']
+        self.assertEqual(summary['total_area'], Decimal('3000.00'))
+        self.assertEqual(summary['inventory_total_area'], Decimal('2369.00'))
+
+        sadaf_table = report['daily_reports'][0]['report']['factory_tables'][0]
+
+        # 1. Check Actual Production Row & Footer
+        prod_row = sadaf_table['production_rows'][0]
+        self.assertEqual(prod_row['total_area'], Decimal('3000.00'))
+        prod_g1 = next(c for c in prod_row['grades'] if c['grade'] == self.grade_1)
+        prod_g2 = next(c for c in prod_row['grades'] if c['grade'] == self.grade_2)
+        prod_g3 = next(c for c in prod_row['grades'] if c['grade'] == grade_3)
+
+        self.assertAlmostEqual(float(prod_g1['percentage']), 2000.0 / 3000.0 * 100, places=2)
+        self.assertAlmostEqual(float(prod_g2['percentage']), 1000.0 / 3000.0 * 100, places=2)
+        self.assertEqual(prod_g3['percentage'], Decimal('0.00'))
+        prod_row_sum = (prod_g1['percentage'] + prod_g2['percentage'] + prod_g3['percentage']).quantize(Decimal('0.01'))
+        self.assertEqual(prod_row_sum, Decimal('100.00'))
+
+        prod_foot = sadaf_table['production_footer']
+        foot_g1 = next(c for c in prod_foot['grades'] if c['grade'] == self.grade_1)
+        foot_g2 = next(c for c in prod_foot['grades'] if c['grade'] == self.grade_2)
+        self.assertAlmostEqual(float(foot_g1['percentage']), 66.67, places=2)
+        self.assertAlmostEqual(float(foot_g2['percentage']), 33.33, places=2)
+
+        # 2. Check Warehouse Inventory Row & Footer
+        inv_row = sadaf_table['inventory_rows'][0]
+        self.assertEqual(inv_row['total_area'], Decimal('2369.00'))
+        inv_g1 = next(c for c in inv_row['grades'] if c['grade'] == self.grade_1)
+        inv_g2 = next(c for c in inv_row['grades'] if c['grade'] == self.grade_2)
+        inv_g3 = next(c for c in inv_row['grades'] if c['grade'] == grade_3)
+
+        # Exact user percentages: 71.89%, 22.75%, 5.36%
+        self.assertEqual(inv_g1['percentage'].quantize(Decimal('0.01')), Decimal('71.89'))
+        self.assertEqual(inv_g2['percentage'].quantize(Decimal('0.01')), Decimal('22.75'))
+        self.assertEqual(inv_g3['percentage'].quantize(Decimal('0.01')), Decimal('5.36'))
+
+        inv_row_sum = (inv_g1['percentage'] + inv_g2['percentage'] + inv_g3['percentage']).quantize(Decimal('0.01'))
+        self.assertEqual(inv_row_sum, Decimal('100.00'))
+
+        # Check Inventory Footer
+        inv_foot = sadaf_table['inventory_footer']
+        self.assertEqual(inv_foot['total_area'], Decimal('2369.00'))
+        foot_inv_g1 = next(c for c in inv_foot['grades'] if c['grade'] == self.grade_1)
+        foot_inv_g2 = next(c for c in inv_foot['grades'] if c['grade'] == self.grade_2)
+        foot_inv_g3 = next(c for c in inv_foot['grades'] if c['grade'] == grade_3)
+
+        self.assertEqual(foot_inv_g1['percentage'].quantize(Decimal('0.01')), Decimal('71.89'))
+        self.assertEqual(foot_inv_g2['percentage'].quantize(Decimal('0.01')), Decimal('22.75'))
+        self.assertEqual(foot_inv_g3['percentage'].quantize(Decimal('0.01')), Decimal('5.36'))
+        inv_foot_sum = (foot_inv_g1['percentage'] + foot_inv_g2['percentage'] + foot_inv_g3['percentage']).quantize(Decimal('0.01'))
+        self.assertEqual(inv_foot_sum, Decimal('100.00'))
+
+    def test_multi_product_inventory_grade_percentages(self):
+        """
+        Verify multi-product inventory calculations:
+        - Product 1 row % uses Product 1 area as denominator.
+        - Product 2 row % uses Product 2 area as denominator.
+        - Inventory footer row uses total factory inventory area as denominator.
+        """
+        grade_3 = Grade.objects.create(name='درجه 6', rank=3, color='#dc2626', active=True)
+        d = date(2026, 10, 19)
+
+        # Product 1: Size 30x100 (Total = 1000 m2)
+        # 700 Grade 1 (70%), 300 Grade 2 (30%)
+        Production.objects.create(
+            factory=self.sadaf, date=d, record_type='inventory',
+            size=self.size_30_100, grade=self.grade_1, area=Decimal('700.00'), created_by=self.admin
+        )
+        Production.objects.create(
+            factory=self.sadaf, date=d, record_type='inventory',
+            size=self.size_30_100, grade=self.grade_2, area=Decimal('300.00'), created_by=self.admin
+        )
+
+        # Product 2: Size 60x60 (Total = 1369 m2)
+        # 1003 Grade 1 (73.27%), 239 Grade 2 (17.46%), 127 Grade 3 (9.28%)
+        Production.objects.create(
+            factory=self.sadaf, date=d, record_type='inventory',
+            size=self.size_60_60, grade=self.grade_1, area=Decimal('1003.00'), created_by=self.admin
+        )
+        Production.objects.create(
+            factory=self.sadaf, date=d, record_type='inventory',
+            size=self.size_60_60, grade=self.grade_2, area=Decimal('239.00'), created_by=self.admin
+        )
+        Production.objects.create(
+            factory=self.sadaf, date=d, record_type='inventory',
+            size=self.size_60_60, grade=grade_3, area=Decimal('127.00'), created_by=self.admin
+        )
+
+        cleaned_data = {'start': d, 'end': d, 'factory': [self.sadaf]}
+        report = get_management_report_data(self.admin, cleaned_data, {}, include_days=True)
+        sadaf_table = report['daily_reports'][0]['report']['factory_tables'][0]
+
+        self.assertEqual(len(sadaf_table['inventory_rows']), 2)
+
+        # Product 1 row checks
+        r1 = next(r for r in sadaf_table['inventory_rows'] if r['size'] == self.size_30_100)
+        self.assertEqual(r1['total_area'], Decimal('1000.00'))
+        r1_g1 = next(c for c in r1['grades'] if c['grade'] == self.grade_1)
+        r1_g2 = next(c for c in r1['grades'] if c['grade'] == self.grade_2)
+        self.assertEqual(r1_g1['percentage'].quantize(Decimal('0.01')), Decimal('70.00'))
+        self.assertEqual(r1_g2['percentage'].quantize(Decimal('0.01')), Decimal('30.00'))
+
+        # Product 2 row checks
+        r2 = next(r for r in sadaf_table['inventory_rows'] if r['size'] == self.size_60_60)
+        self.assertEqual(r2['total_area'], Decimal('1369.00'))
+        r2_g1 = next(c for c in r2['grades'] if c['grade'] == self.grade_1)
+        r2_g2 = next(c for c in r2['grades'] if c['grade'] == self.grade_2)
+        r2_g3 = next(c for c in r2['grades'] if c['grade'] == grade_3)
+        self.assertEqual(r2_g1['percentage'].quantize(Decimal('0.01')), Decimal('73.27'))
+        self.assertEqual(r2_g2['percentage'].quantize(Decimal('0.01')), Decimal('17.46'))
+        self.assertEqual(r2_g3['percentage'].quantize(Decimal('0.01')), Decimal('9.28'))
+
+        # Inventory Footer checks: Denominator = 1000 + 1369 = 2369 m2
+        inv_foot = sadaf_table['inventory_footer']
+        self.assertEqual(inv_foot['total_area'], Decimal('2369.00'))
+        foot_g1 = next(c for c in inv_foot['grades'] if c['grade'] == self.grade_1)
+        foot_g2 = next(c for c in inv_foot['grades'] if c['grade'] == self.grade_2)
+        foot_g3 = next(c for c in inv_foot['grades'] if c['grade'] == grade_3)
+
+        # Grade 1 total: 700 + 1003 = 1703 -> 71.89%
+        self.assertEqual(foot_g1['percentage'].quantize(Decimal('0.01')), Decimal('71.89'))
+        # Grade 2 total: 300 + 239 = 539 -> 22.75%
+        self.assertEqual(foot_g2['percentage'].quantize(Decimal('0.01')), Decimal('22.75'))
+        # Grade 3 total: 127 -> 5.36%
+        self.assertEqual(foot_g3['percentage'].quantize(Decimal('0.01')), Decimal('5.36'))
+        inv_foot_sum = (foot_g1['percentage'] + foot_g2['percentage'] + foot_g3['percentage']).quantize(Decimal('0.01'))
+        self.assertEqual(inv_foot_sum, Decimal('100.00'))
+
