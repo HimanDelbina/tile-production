@@ -189,13 +189,15 @@
           </tr>
           {% endif %}
         </tbody>
+          {% if not factory.has_inventory %}
         <tfoot>
           <tr>
-            <th scope="row">جمع کل تولید واقعی {{ factory.name }}</th>
+            <th scope="row">جمع {{ factory.name }}</th>
             <td>{{ factory.total_area|rounded_num }}</td>
             {% for cell in factory.footer.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}
           </tr>
         </tfoot>
+        {% endif %}
       </table>
     </div>
     {% endif %}
@@ -251,13 +253,15 @@
           </tr>
           {% endif %}
         </tbody>
+        {% if not report.aggregated_table.has_inventory %}
         <tfoot>
           <tr>
-            <th scope="row">جمع کل تولید واقعی</th>
+            <th scope="row">جمع کل</th>
             <td>{{ report.aggregated_table.footer.total_area|rounded_num }}</td>
             {% for cell in report.aggregated_table.footer.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}
           </tr>
         </tfoot>
+        {% endif %}
       </table>
     </div>
   </section>

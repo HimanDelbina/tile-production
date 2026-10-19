@@ -139,7 +139,23 @@ class RecordTypeFeatureTests(TestCase):
         content = resp.content.decode('utf-8')
         self.assertIn('بخش تولید واقعی', content)
         self.assertIn('بخش موجودی انبار', content)
+        self.assertIn('جمع تولید واقعی', content)
         self.assertIn('جمع موجودی انبار', content)
+        self.assertNotIn('جمع کل تولید واقعی صدف', content)
+        self.assertNotIn('جمع صدف', content)
+
+        # Day with only production (no inventory)
+        d_only_prod = date(2026, 10, 20)
+        Production.objects.create(
+            factory=self.sadaf, date=d_only_prod, record_type='production',
+            size=self.size_40_120, grade=self.grade_1, area=Decimal('1500.00'), created_by=self.admin
+        )
+        url_prod = reverse('management_report') + f"?start={jalali(d_only_prod)}&end={jalali(d_only_prod)}"
+        resp_prod = self.client.get(url_prod)
+        self.assertEqual(resp_prod.status_code, 200)
+        content_prod = resp_prod.content.decode('utf-8')
+        self.assertIn('جمع صدف', content_prod)
+        self.assertNotIn('بخش موجودی انبار', content_prod)
 
     def test_multi_day_inventory_deduplication(self):
         """
