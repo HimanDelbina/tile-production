@@ -901,6 +901,22 @@ def import_confirm(request, token):
                 else:
                     conflict.status = 'superseded'
                     conflict.save(update_fields=['status'])
+
+        # Supersede any previous confirmed batches for this factory and date,
+        # soft-deleting their active production records so re-importing does not create duplicates.
+        prev_confirmed = ProductionImportBatch.objects.filter(
+            factory=batch.factory,
+            date=batch.date,
+            status='confirmed'
+        ).exclude(pk=batch.pk)
+        if prev_confirmed.exists():
+            old_prods = list(Production.objects.filter(
+                import_rows__batch__in=prev_confirmed,
+                deleted_at__isnull=True
+            ))
+            if old_prods:
+                bulk_delete_records(request.user, old_prods)
+            prev_confirmed.update(status='superseded')
             
         # 6. Re-validate ALL rows with unified validation service
         invalid_rows = []

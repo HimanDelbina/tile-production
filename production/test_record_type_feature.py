@@ -376,3 +376,117 @@ class RecordTypeFeatureTests(TestCase):
         inv_foot_sum = (foot_g1['percentage'] + foot_g2['percentage'] + foot_g3['percentage']).quantize(Decimal('0.01'))
         self.assertEqual(inv_foot_sum, Decimal('100.00'))
 
+    def test_record_type_strictly_controls_section_membership(self):
+        """
+        Verify the user's test scenario:
+        3 products:
+        - 35x100 = 2369 m2, status: production
+        - 40x120 = 6048 m2, status: production
+        - 60x60 = 4370 m2, status: production
+
+        Expected:
+        - Total production = 12787 m2
+        - Total inventory = 0 m2
+        - None of the 3 products appear in inventory.
+
+        Then, update 35x100 status to 'inventory':
+        Expected:
+        - Total production = 10418 m2
+        - Total inventory = 2369 m2
+        - 35x100 is ONLY in inventory, NOT in production.
+        """
+        size_35_100 = Size.objects.create(width=35, length=100, active=True)
+        d = date(2026, 10, 25)
+
+        p1 = Production.objects.create(
+            factory=self.sadaf, date=d, record_type='production',
+            size=size_35_100, grade=self.grade_1, area=Decimal('2369.00'), created_by=self.admin
+        )
+        p2 = Production.objects.create(
+            factory=self.sadaf, date=d, record_type='production',
+            size=self.size_40_120, grade=self.grade_1, area=Decimal('6048.00'), created_by=self.admin
+        )
+        p3 = Production.objects.create(
+            factory=self.sadaf, date=d, record_type='production',
+            size=self.size_60_60, grade=self.grade_1, area=Decimal('4370.00'), created_by=self.admin
+        )
+
+        cleaned_data = {'start': d, 'end': d, 'factory': [self.sadaf]}
+        report = get_management_report_data(self.admin, cleaned_data, {}, include_days=True)
+        sadaf_table = report['daily_reports'][0]['report']['factory_tables'][0]
+
+        # All 3 products in production, 0 in inventory
+        self.assertEqual(sadaf_table['total_area'], Decimal('12787.00'))
+        self.assertEqual(sadaf_table['inventory_total_area'], Decimal('0.00'))
+        self.assertFalse(sadaf_table['has_inventory'])
+        self.assertEqual(len(sadaf_table['production_rows']), 3)
+        self.assertEqual(len(sadaf_table['inventory_rows']), 0)
+
+        # Now change 35x100 to inventory
+        p1.record_type = 'inventory'
+        p1.save()
+
+        report2 = get_management_report_data(self.admin, cleaned_data, {}, include_days=True)
+        sadaf_table2 = report2['daily_reports'][0]['report']['factory_tables'][0]
+
+        self.assertEqual(sadaf_table2['total_area'], Decimal('10418.00'))
+        self.assertEqual(sadaf_table2['inventory_total_area'], Decimal('2369.00'))
+        self.assertTrue(sadaf_table2['has_inventory'])
+        self.assertEqual(len(sadaf_table2['production_rows']), 2)
+        self.assertEqual(len(sadaf_table2['inventory_rows']), 1)
+        self.assertEqual(sadaf_table2['inventory_rows'][0]['size'], size_35_100)
+        self.assertNotIn(size_35_100, [r['size'] for r in sadaf_table2['production_rows']])
+
+    def test_reimport_supersedes_previous_batch_and_deletes_old_productions(self):
+        """
+        Verify that confirming a new import batch for the same factory and date
+        supersedes previous confirmed batches and soft-deletes their productions,
+        preventing duplicate records and ghost inventory.
+        """
+        import uuid
+        d = date(2026, 10, 26)
+
+        # Batch 1: confirmed with inventory
+        batch1 = ProductionImportBatch.objects.create(
+            factory=self.sadaf, date=d, uploaded_by=self.admin,
+            status='confirmed', file_hash='hash1'
+        )
+        prod1 = Production.objects.create(
+            factory=self.sadaf, date=d, record_type='inventory',
+            size=self.size_40_120, grade=self.grade_1, area=Decimal('1000.00'), created_by=self.admin
+        )
+        ProductionImportRow.objects.create(
+            batch=batch1, excel_row=2, raw_description='40x120',
+            production=prod1, size=self.size_40_120, grade=self.grade_1, area=Decimal('1000.00'),
+            record_type='inventory'
+        )
+
+        # Batch 2: new upload for same factory and date, setting to production
+        batch2 = ProductionImportBatch.objects.create(
+            factory=self.sadaf, date=d, uploaded_by=self.admin,
+            status='pending', file_hash='hash2'
+        )
+        row2 = ProductionImportRow.objects.create(
+            batch=batch2, excel_row=2, raw_description='40x120',
+            size=self.size_40_120, grade=self.grade_1, area=Decimal('1000.00'),
+            record_type='production', status='valid'
+        )
+
+        # Confirm Batch 2 via view
+        res = self.client.post(reverse('import_confirm', args=[batch2.token]))
+        self.assertEqual(res.status_code, 302)
+
+        batch1.refresh_from_db()
+        batch2.refresh_from_db()
+        self.assertEqual(batch1.status, 'superseded')
+        self.assertEqual(batch2.status, 'confirmed')
+
+        prod1.refresh_from_db()
+        self.assertIsNotNone(prod1.deleted_at)
+
+        # Only batch 2 production is active
+        active_prods = Production.objects.filter(factory=self.sadaf, date=d, deleted_at__isnull=True)
+        self.assertEqual(active_prods.count(), 1)
+        self.assertEqual(active_prods.first().record_type, 'production')
+
+
