@@ -43,6 +43,12 @@
   .brief .brief-size td:first-child { color: #60758a; }
   .brief tfoot th, .brief tfoot td { background: #e4f3ef; color: #164f49; font-weight: 700; border-top: 2px solid #acd4c9; font-size: 14px; }
   .brief-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-inline-end: 5px; }
+  .brief-section-divider { font-size: 13px; font-weight: 700; padding: 7px 12px !important; text-align: right !important; }
+  .brief-section-divider.is-production { background: #f0fdf4 !important; color: #166534 !important; border-top: 1px solid #bbf7d0 !important; border-bottom: 1px solid #bbf7d0 !important; }
+  .brief-section-divider.is-inventory { background: #fffbeb !important; color: #92400e !important; border-top: 2px solid #fde68a !important; border-bottom: 1px solid #fde68a !important; }
+  .brief-subtotal-row.is-production td { background: #e6f7f0 !important; color: #166534 !important; font-weight: 700; font-size: 13px; border-top: 1px solid #bbf7d0 !important; border-bottom: 2px solid #a7f3d0 !important; }
+  .brief-subtotal-row.is-inventory td { background: #fef3c7 !important; color: #92400e !important; font-weight: 700; font-size: 13px; border-top: 1px solid #fde68a !important; border-bottom: 2px solid #fcd34d !important; }
+  .brief-inv-row { background: #fffdf7; }
   .brief-note { padding: 9px 16px; background: #fcfdfd; font-size: 11px; color: var(--muted); border-top: 1px solid var(--line); }
   .brief-empty { padding: 22px 16px; text-align: center; }
   .brief-day { margin-bottom: 26px; }
@@ -118,25 +124,81 @@
   {% if valid and report %}
   {% for day in report.daily_reports %}
   <section class="brief-day" aria-labelledby="day-heading-{{ day.date|date:'Ymd' }}">
-    <header class="brief-day-heading"><h2 id="day-heading-{{ day.date|date:'Ymd' }}">تولید روز {{ day.date|jdate }}</h2><span>جمع روز: <strong>{{ day.report.summary_cards.total_area|rounded_num }}</strong> مترمربع</span></header>
+    <header class="brief-day-heading">
+      <h2 id="day-heading-{{ day.date|date:'Ymd' }}">تولید روز {{ day.date|jdate }}</h2>
+      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <span>جمع تولید روز: <strong>{{ day.report.summary_cards.total_area|rounded_num }}</strong> مترمربع</span>
+        {% if day.report.summary_cards.inventory_total_area > 0 %}
+        <span class="brief-badge" style="background: #fef3c7; color: #92400e; border: 1px solid #fde68a; font-size: 12px; font-weight: 600;">
+          📦 موجودی انبار: <strong>{{ day.report.summary_cards.inventory_total_area|rounded_num }}</strong> مترمربع
+        </span>
+        {% endif %}
+      </div>
+    </header>
   {% for factory in day.report.factory_tables %}
   <section class="brief-panel brief-factory-panel" aria-labelledby="factory-heading-{{ day.date|date:'Ymd' }}-{{ factory.factory.pk }}">
     <div class="brief-section-head brief-factory-heading">
       <h3 id="factory-heading-{{ day.date|date:'Ymd' }}-{{ factory.factory.pk }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V10l6 3V8l7 4V3h4l1 18H3Z M7 17h1m4 0h1m4 0h1"/></svg>کارخانه {{ factory.name }}</h3>
       <p>متراژ: مترمربع · درصد از همان ردیف</p>
     </div>
-    {% if not factory.has_production %}<p class="brief-empty">در این بازه برای این کارخانه تولیدی ثبت نشده است.</p>{% endif %}
+    {% if not factory.has_any_data %}<p class="brief-empty">در این بازه برای این کارخانه تولیدی ثبت نشده است.</p>{% endif %}
+    {% if factory.has_any_data %}
     <div class="table-scroll" tabindex="0" role="region" aria-label="جدول تولید کارخانه {{ factory.name }}">
       <table>
         <thead><tr><th scope="col">سایز</th><th scope="col">کل متراژ</th>{% for grade in report.grades %}<th scope="col"><span class="brief-dot" style="background:{{ grade.color }}"></span>{{ grade.name|fa }}</th>{% endfor %}</tr></thead>
         <tbody>
-          {% for row in factory.rows %}
-          <tr class="brief-size"><td>{% if not demo %}<a href="{{ row.url }}">{% endif %}{{ row.size_label|fa }}{% if not demo %}</a>{% endif %}</td><td>{{ row.total_area|rounded_num }}</td>{% for cell in row.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}</tr>
+          {% if factory.has_inventory and factory.has_production %}
+          <tr>
+            <td colspan="{{ report.grades|length|add:2 }}" class="brief-section-divider is-production">
+              ⚙️ بخش تولید واقعی
+            </td>
+          </tr>
+          {% endif %}
+          {% for row in factory.production_rows %}
+          <tr class="brief-size">
+            <td>{% if not demo %}<a href="{{ row.url }}">{% endif %}{{ row.size_label|fa }}{% if not demo %}</a>{% endif %}</td>
+            <td>{{ row.total_area|rounded_num }}</td>
+            {% for cell in row.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}
+          </tr>
           {% endfor %}
+          {% if factory.has_inventory and factory.has_production %}
+          <tr class="brief-subtotal-row is-production">
+            <td style="text-align: right;">جمع تولید واقعی</td>
+            <td>{{ factory.production_footer.total_area|rounded_num }}</td>
+            {% for cell in factory.production_footer.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}
+          </tr>
+          {% endif %}
+
+          {% if factory.has_inventory %}
+          <tr>
+            <td colspan="{{ report.grades|length|add:2 }}" class="brief-section-divider is-inventory">
+              📦 بخش موجودی انبار
+            </td>
+          </tr>
+          {% for row in factory.inventory_rows %}
+          <tr class="brief-size brief-inv-row">
+            <td>{% if not demo %}<a href="{{ row.url }}">{% endif %}{{ row.size_label|fa }}{% if not demo %}</a>{% endif %}</td>
+            <td>{{ row.total_area|rounded_num }}</td>
+            {% for cell in row.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}
+          </tr>
+          {% endfor %}
+          <tr class="brief-subtotal-row is-inventory">
+            <td style="text-align: right;">جمع موجودی انبار</td>
+            <td>{{ factory.inventory_footer.total_area|rounded_num }}</td>
+            {% for cell in factory.inventory_footer.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}
+          </tr>
+          {% endif %}
         </tbody>
-        <tfoot><tr><th scope="row">جمع {{ factory.name }}</th><td>{{ factory.total_area|rounded_num }}</td>{% for cell in factory.footer.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}</tr></tfoot>
+        <tfoot>
+          <tr>
+            <th scope="row">جمع کل تولید واقعی {{ factory.name }}</th>
+            <td>{{ factory.total_area|rounded_num }}</td>
+            {% for cell in factory.footer.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}
+          </tr>
+        </tfoot>
       </table>
     </div>
+    {% endif %}
   </section>
   {% endfor %}
   </section>
@@ -147,15 +209,55 @@
       <table>
         <thead><tr><th scope="col">سایز</th><th scope="col">کل متراژ</th>{% for grade in report.grades %}<th scope="col"><span class="brief-dot" style="background:{{ grade.color }}"></span>{{ grade.name|fa }}</th>{% endfor %}</tr></thead>
         <tbody>
-          {% for row in report.aggregated_table.rows %}
+          {% if report.aggregated_table.has_inventory and report.aggregated_table.has_production %}
+          <tr>
+            <td colspan="{{ report.grades|length|add:2 }}" class="brief-section-divider is-production">
+              ⚙️ بخش تولید واقعی
+            </td>
+          </tr>
+          {% endif %}
+          {% for row in report.aggregated_table.production_rows %}
           <tr class="brief-size">
             <td>{% if not demo %}<a href="{{ row.url }}">{% endif %}{{ row.size_label|fa }}{% if not demo %}</a>{% endif %}</td>
             <td>{{ row.total_area|rounded_num }}</td>
             {% for cell in row.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}
           </tr>
           {% endfor %}
+          {% if report.aggregated_table.has_inventory and report.aggregated_table.has_production %}
+          <tr class="brief-subtotal-row is-production">
+            <td style="text-align: right;">جمع تولید واقعی</td>
+            <td>{{ report.aggregated_table.production_footer.total_area|rounded_num }}</td>
+            {% for cell in report.aggregated_table.production_footer.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}
+          </tr>
+          {% endif %}
+
+          {% if report.aggregated_table.has_inventory %}
+          <tr>
+            <td colspan="{{ report.grades|length|add:2 }}" class="brief-section-divider is-inventory">
+              📦 بخش موجودی انبار
+            </td>
+          </tr>
+          {% for row in report.aggregated_table.inventory_rows %}
+          <tr class="brief-size brief-inv-row">
+            <td>{% if not demo %}<a href="{{ row.url }}">{% endif %}{{ row.size_label|fa }}{% if not demo %}</a>{% endif %}</td>
+            <td>{{ row.total_area|rounded_num }}</td>
+            {% for cell in row.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}
+          </tr>
+          {% endfor %}
+          <tr class="brief-subtotal-row is-inventory">
+            <td style="text-align: right;">جمع موجودی انبار</td>
+            <td>{{ report.aggregated_table.inventory_footer.total_area|rounded_num }}</td>
+            {% for cell in report.aggregated_table.inventory_footer.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}
+          </tr>
+          {% endif %}
         </tbody>
-        <tfoot><tr><th scope="row">جمع کل</th><td>{{ report.aggregated_table.footer.total_area|rounded_num }}</td>{% for cell in report.aggregated_table.footer.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}</tr></tfoot>
+        <tfoot>
+          <tr>
+            <th scope="row">جمع کل تولید واقعی</th>
+            <td>{{ report.aggregated_table.footer.total_area|rounded_num }}</td>
+            {% for cell in report.aggregated_table.footer.grades %}<td>{% include 'production/_brief_grade.html' %}</td>{% endfor %}
+          </tr>
+        </tfoot>
       </table>
     </div>
   </section>

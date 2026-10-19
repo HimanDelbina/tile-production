@@ -15,6 +15,7 @@ def filtered(user,data,ignore_grade=False):
     for field in ('factory','size','glaze','grade'):
         if field=='grade' and ignore_grade: continue
         if data.get(field): q=q.filter(**{field+'__in':data[field]})
+    if data.get('record_type'): q=q.filter(record_type=data['record_type'])
     if data.get('start'): q=q.filter(date__gte=data['start'])
     if data.get('end'): q=q.filter(date__lte=data['end'])
     if data.get('author'): q=q.filter(created_by=data['author'])
@@ -91,7 +92,7 @@ def summarize(user,data,params):
             trend.append({'label':label,'area':area,'height':float(area/maxvalue*100),'url':drill(params,start=start_label,end=end_label)})
     return {'rows':rows,'allgrades':allgrades,'total':total,'base_total':base,'first_share':percentage(first,base),'factories':factories,'sizes':sizes,'glazes':glazes,'top_size':top_size,'grades':grades,'designs':designs,'stacks':stacks,'trend':trend,'trend_mode':trendkey,'grade_objects':list(grade_map.values())}
 
-HEADERS={'detail':['تاریخ تولید','کارخانه','سایز','درجه','متراژ (مترمربع)','لعاب','ثبت‌کننده','توضیحات'], 'day':['روز شمسی'],'month':['ماه شمسی'],'year':['سال شمسی'],'factory':['کارخانه'],'size':['سایز'],'glaze':['لعاب'],'grade':['درجه'],'type':['سایز','درجه'],'size_glaze':['سایز','لعاب']}
+HEADERS={'detail':['تاریخ تولید','کارخانه','سایز','درجه','متراژ (مترمربع)','نوع رکورد','لعاب','ثبت‌کننده','توضیحات'], 'day':['روز شمسی'],'month':['ماه شمسی'],'year':['سال شمسی'],'factory':['کارخانه'],'size':['سایز'],'glaze':['لعاب'],'grade':['درجه'],'type':['سایز','درجه'],'size_glaze':['سایز','لعاب']}
 
 def report_table(summary,data):
     group=data.get('group') or 'detail'; records=summary['rows'];total=summary['total']
@@ -121,7 +122,7 @@ def report_table(summary,data):
     if group=='detail':
         order=data.get('order') or 'new'
         rows=sorted(records,key=lambda r: (r.area,r.id) if order.startswith('area') else (r.date,r.id),reverse=order in ('new','area_desc'))
-        return {'headers':HEADERS[group],'body':[{'cells':[jalali(r.date),str(r.factory),str(r.size),str(r.grade),r.area,str(r.glaze) if r.glaze else '—',r.created_by.get_full_name() or r.created_by.username,r.notes],'obj':r,'area':r.area} for r in rows],'percent_cols':[],'area_cols':[4],'group':group}
+        return {'headers':HEADERS[group],'body':[{'cells':[jalali(r.date),str(r.factory),str(r.size),str(r.grade),r.area,r.get_record_type_display(),str(r.glaze) if r.glaze else '—',r.created_by.get_full_name() or r.created_by.username,r.notes],'obj':r,'area':r.area} for r in rows],'percent_cols':[],'area_cols':[4],'group':group}
     def key(r):
         return {'day':(jalali(r.date),),'month':(jalali(r.date)[:7],),'year':(jalali(r.date)[:4],),'factory':(r.factory,),'size':(r.size,),'glaze':(r.glaze if r.glaze else 'بدون لعاب',),'grade':(r.grade,),'type':(r.size,r.grade),'size_glaze':(r.size,r.glaze if r.glaze else 'بدون لعاب')}[group]
     groups=defaultdict(lambda:ZERO)

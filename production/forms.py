@@ -22,10 +22,13 @@ class DecimalInput(forms.DecimalField):
 
 class ProductionForm(forms.ModelForm):
     area=DecimalInput(label='متراژ (مترمربع)',max_digits=14,decimal_places=2,min_value=Decimal('.01'),widget=forms.TextInput(attrs={'inputmode':'decimal','class':'area-input','placeholder':'۰٫۰۰'}))
+    record_type=forms.ChoiceField(label='نوع رکورد',choices=Production.RECORD_TYPES,initial='production',required=False,widget=forms.Select(attrs={'style':'min-width:100px;'}))
     class Meta:
         model=Production
-        fields=['size','glaze','grade','area','notes']
+        fields=['record_type','size','glaze','grade','area','notes']
         widgets={'notes':forms.TextInput(attrs={'placeholder':'اختیاری'})}
+    def clean_record_type(self):
+        return self.cleaned_data.get('record_type') or 'production'
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.fields['glaze'].required = False
@@ -54,6 +57,7 @@ class FilterForm(forms.Form):
     size=forms.ModelMultipleChoiceField(label='سایزها',queryset=Size.objects.all(),required=False)
     glaze=forms.ModelMultipleChoiceField(label='لعاب‌ها',queryset=Glaze.objects.all(),required=False)
     grade=forms.ModelMultipleChoiceField(label='درجات',queryset=Grade.objects.all(),required=False)
+    record_type=forms.ChoiceField(label='نوع رکورد',choices=[('','همه'),('production','تولید واقعی'),('inventory','موجودی انبار')],required=False)
     minimum=DecimalInput(label='حداقل متراژ ردیف',required=False,max_digits=14,decimal_places=2,min_value=0)
     maximum=DecimalInput(label='حداکثر متراژ ردیف',required=False,max_digits=14,decimal_places=2,min_value=0)
     author=forms.ModelChoiceField(label='ثبت‌کننده',queryset=get_user_model().objects.none(),required=False)
@@ -142,6 +146,15 @@ class ExcelUploadForm(forms.Form):
 
 class ImportRowEditForm(forms.Form):
     row_id = forms.IntegerField(widget=forms.HiddenInput)
+    record_type = forms.ChoiceField(
+        label='نوع رکورد',
+        choices=Production.RECORD_TYPES,
+        initial='production',
+        required=False,
+        widget=forms.Select(attrs={'style': 'width: 100%; min-width: 105px; font-size: 0.85rem; padding: 4px; border-radius: 4px;'})
+    )
+    def clean_record_type(self):
+        return self.cleaned_data.get('record_type') or 'production'
     size = forms.ModelChoiceField(
         label='سایز',
         queryset=Size.objects.filter(active=True),

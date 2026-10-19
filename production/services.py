@@ -12,7 +12,7 @@ def fingerprint(payload):
 def duplicate_rows(user,factory,date,rows):
     seen=set(); duplicates=[]
     for i,row in enumerate(rows,1):
-        sig=tuple(str(row.get(k)) for k in ('size','glaze','grade','area','notes'))
+        sig=tuple(str(row.get(k)) for k in ('size','glaze','grade','area','notes','record_type'))
         if sig in seen or records_for(user).filter(factory=factory,date=date,**row).exists(): duplicates.append(i)
         seen.add(sig)
     return duplicates

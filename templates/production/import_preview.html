@@ -135,11 +135,12 @@
   <input type="hidden" name="action" value="save_rows">
   
   <div style="overflow-x: auto; margin-bottom: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
-    <table class="entry-table" style="width: 100%; min-width: 1100px; border-collapse: collapse; text-align: right;">
+    <table class="entry-table" style="width: 100%; min-width: 1220px; border-collapse: collapse; text-align: right;">
       <thead>
         <tr style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
           <th style="padding: 10px; width: 45px; text-align: center;">ردیف</th>
-          <th style="padding: 10px; min-width: 200px;">شرح اصلی کالا</th>
+          <th style="padding: 10px; min-width: 190px;">شرح اصلی کالا</th>
+          <th style="padding: 10px; min-width: 115px;">نوع رکورد</th>
           <th style="padding: 10px; min-width: 130px;">سایز</th>
           <th style="padding: 10px; min-width: 100px;">درجه</th>
           <th style="padding: 10px; min-width: 110px;">نوع لعاب</th>
@@ -159,6 +160,10 @@
           </td>
           <td style="padding: 8px; font-size: 0.85rem; line-height: 1.4; color: #1e293b;" title="{{ item.row.raw_description }}">
             {{ item.row.raw_description }}
+          </td>
+          <td style="padding: 8px;">
+            {{ item.form.record_type }}
+            {{ item.form.record_type.errors }}
           </td>
           <td style="padding: 8px;">
             <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 4px;">

@@ -493,6 +493,7 @@ def import_upload(request):
             ProductionImportRow.objects.create(
                 batch=batch,
                 excel_row=r['excel_row'],
+                record_type='production',
                 raw_description=r['raw_description'],
                 parsed_description=parsed_desc.get('cleaned_description', ''),
                 production_quantity=eval_res['quantity'],
@@ -554,6 +555,7 @@ def import_preview(request, token):
                 ProductionImportRow.objects.create(
                     batch=batch,
                     excel_row=r['excel_row'],
+                    record_type='production',
                     raw_description=r['raw_description'],
                     parsed_description=parsed_desc.get('cleaned_description', ''),
                     production_quantity=eval_res['quantity'],
@@ -714,6 +716,7 @@ def import_preview(request, token):
                 form = ImportRowEditForm(request.POST, prefix=f"r_{row_pk}")
                 if form.is_valid():
                     cd = form.cleaned_data
+                    row_obj.record_type = cd.get('record_type') or 'production'
                     row_obj.size = cd['size']
                     row_obj.glaze = cd['glaze']
                     row_obj.grade = cd['grade']
@@ -728,6 +731,7 @@ def import_preview(request, token):
                     row_obj.area = cd['area']
                     row_obj.notes = cd['notes']
                     row_obj.edited_data = {
+                        'record_type': row_obj.record_type,
                         'size': cd['size'].pk if cd['size'] else None,
                         'glaze': cd['glaze'].pk if cd['glaze'] else None,
                         'grade': cd['grade'].pk if cd['grade'] else None,
@@ -802,6 +806,7 @@ def import_preview(request, token):
             prefix=f"r_{r.pk}",
             initial={
                 'row_id': r.pk,
+                'record_type': r.record_type or user_edited.get('record_type') or 'production',
                 'size': r.size_id if r.size else None,
                 'glaze': r.glaze_id if r.glaze else None,
                 'grade': r.grade_id if r.grade else None,
@@ -929,6 +934,7 @@ def import_confirm(request, token):
                 prod = Production(
                     factory=batch.factory,
                     date=batch.date,
+                    record_type=row.record_type or 'production',
                     size=row.size,
                     glaze=row.glaze,
                     grade=row.grade,

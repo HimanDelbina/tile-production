@@ -40,8 +40,13 @@ class Profile(models.Model):
     factories = models.ManyToManyField(Factory,verbose_name='کارخانه‌های مجاز',blank=True)
 
 class Production(models.Model):
+    RECORD_TYPES = [
+        ('production', 'تولید واقعی'),
+        ('inventory', 'موجودی انبار'),
+    ]
     factory=models.ForeignKey(Factory,on_delete=models.PROTECT,verbose_name='کارخانه')
     date=models.DateField('تاریخ تولید')
+    record_type = models.CharField('نوع رکورد', max_length=20, choices=RECORD_TYPES, default='production', db_index=True)
     size=models.ForeignKey(Size,on_delete=models.PROTECT,verbose_name='سایز')
     glaze=models.ForeignKey(Glaze,null=True,blank=True,on_delete=models.PROTECT,verbose_name='لعاب')
     grade=models.ForeignKey(Grade,on_delete=models.PROTECT,verbose_name='درجه')
@@ -55,10 +60,10 @@ class Production(models.Model):
     version=models.PositiveIntegerField(default=1)
     class Meta:
         ordering=['-date','-id']
-        indexes=[models.Index(fields=['factory','date']),models.Index(fields=['deleted_at','date'])]
+        indexes=[models.Index(fields=['factory','date']),models.Index(fields=['deleted_at','date']),models.Index(fields=['factory','date','record_type'])]
     def snapshot(self):
         from .dates import jalali
-        return {'شناسه':str(self.pk),'کارخانه':str(self.factory),'تاریخ تولید':jalali(self.date),'سایز':str(self.size),'لعاب':str(self.glaze) if self.glaze else '—','درجه':str(self.grade),'متراژ':str(self.area),'توضیحات':self.notes,'ثبت‌کننده':self.created_by.get_full_name() or self.created_by.username,'نسخه':self.version,'وضعیت':'حذف‌شده' if self.deleted_at else 'فعال'}
+        return {'شناسه':str(self.pk),'نوع رکورد':self.get_record_type_display(),'کارخانه':str(self.factory),'تاریخ تولید':jalali(self.date),'سایز':str(self.size),'لعاب':str(self.glaze) if self.glaze else '—','درجه':str(self.grade),'متراژ':str(self.area),'توضیحات':self.notes,'ثبت‌کننده':self.created_by.get_full_name() or self.created_by.username,'نسخه':self.version,'وضعیت':'حذف‌شده' if self.deleted_at else 'فعال'}
 
 class Audit(models.Model):
     production=models.ForeignKey(Production,on_delete=models.PROTECT)
@@ -131,6 +136,7 @@ class ProductionImportBatch(models.Model):
 class ProductionImportRow(models.Model):
     batch = models.ForeignKey(ProductionImportBatch, related_name='rows', on_delete=models.CASCADE, verbose_name='دسته بارگذاری')
     excel_row = models.PositiveIntegerField('ردیف اکسل')
+    record_type = models.CharField('نوع رکورد', max_length=20, choices=Production.RECORD_TYPES, default='production')
     raw_description = models.TextField('شرح خام')
     parsed_description = models.TextField('شرح پردازش‌شده', blank=True)
     production_quantity = models.DecimalField('جمع تولید', max_digits=14, decimal_places=2, null=True, blank=True)
